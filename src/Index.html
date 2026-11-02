@@ -5,7 +5,7 @@
 <title>加油站巡檢</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=Noto+Sans+TC:wght@400;500;700&display=swap" media="print" onload="this.media='all'">
 <style>
 /* 版面：手機寬度單欄（最寬 480px）— 登入卡片；登入後為固定頂部列、捲動內容、底部分頁列 */
 :root{
@@ -208,6 +208,23 @@ svg.i.s{width:18px;height:18px}
 .list-row .rowbtn .sub{font-size:12px;color:var(--muted)}
 .chk{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:10px;padding:8px 12px;background:var(--sunken);min-height:44px}
 </style>
+<script>
+/* 啟動監看：主程式 8 秒內沒有啟動時，在畫面上顯示可能原因（與主程式分開，主程式有語法錯誤時仍會執行） */
+window.__errs=[];
+window.addEventListener('error',function(e){window.__errs.push((e.message||'錯誤')+(e.lineno?'（第 '+e.lineno+' 行）':''))});
+setTimeout(function(){
+  if(window.__appStarted)return;
+  var v=document.getElementById('view');if(!v)return;
+  v.innerHTML='<div class="panel stack" style="margin-top:24px"><b>畫面沒有正常啟動</b>'+
+  '<span class="small">請系統管理員依序確認：</span>'+
+  '<ol class="small" style="margin:0;padding-left:20px;line-height:1.8">'+
+  '<li>Apps Script 的 Index.html 有完整貼上，最後一行是 &lt;/html&gt;</li>'+
+  '<li>修改程式後，已從「部署 → 管理部署作業 → 編輯 → 版本：新版本」重新部署</li>'+
+  '<li>瀏覽器沒有封鎖 script.google.com 的指令碼</li></ol>'+
+  (window.__errs.length?'<span class="small" style="color:var(--bad)">錯誤訊息：'+window.__errs.slice(0,3).join('；').replace(/</g,'&lt;')+'</span>':'<span class="small muted">沒有收到錯誤訊息。</span>')+
+  '<button class="btn block" onclick="location.reload()">重新載入</button></div>';
+},8000);
+</script>
 </head>
 <body>
 <div class="app" id="app">
@@ -257,7 +274,8 @@ const TABS={
 /* ---------- 與後端溝通 ---------- */
 function api(fn,...args){return new Promise((res,rej)=>{
  if(!(window.google&&google.script&&google.script.run)){rej(new Error('請從系統管理員提供的網址開啟'));return}
- google.script.run.withSuccessHandler(res).withFailureHandler(rej)[fn](...args)})}
+ const timer=setTimeout(()=>rej(new Error('伺服器沒有回應，請確認網路後重新整理')),45000);
+ google.script.run.withSuccessHandler(v=>{clearTimeout(timer);res(v)}).withFailureHandler(e=>{clearTimeout(timer);rej(e)})[fn](...args)})}
 async function call(fn,...args){
  setBusy(1);
  try{return await api(fn,...args)}
@@ -567,8 +585,9 @@ async function doLogin(req){
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&S.sheet){S.sheet=null;render()}});
 window.addEventListener('hashchange',onRoute);
 (async function boot(){
+ window.__appStarted=true;
  const t=store.get('gi_token'),s=store.get('gi_sess');
- if(t&&s){S.token=t;S.sess=s;try{await loadHome()}catch(e){resetAll()}}
+ if(t&&s){S.token=t;S.sess=s;document.getElementById('view').innerHTML='<p class="muted" style="text-align:center;margin-top:30vh">正在恢復登入…</p>';try{await loadHome()}catch(e){resetAll()}}
  if(S.sess)await onRoute();else render();
 })();
 </script>
