@@ -16,6 +16,7 @@ function makeEnv(workbookPath, opts = {}) {
   }
   class Sheet {
     constructor(name, data) { this.name = name; this.data = data.map(r => r.slice()); }
+    getName() { return this.name; }
     set(r, c, v) { while (this.data.length < r) this.data.push([]); const row = this.data[r - 1]; while (row.length < c) row.push(''); row[c - 1] = v; }
     getLastRow() { let n = this.data.length; while (n && this.data[n - 1].every(v => v === '' || v === undefined)) n--; return n; }
     getLastColumn() { return this.data.reduce((m, r) => Math.max(m, r.length), 0); }
@@ -24,7 +25,7 @@ function makeEnv(workbookPath, opts = {}) {
   }
   const sheets = {};
   Object.keys(wb).forEach(n => sheets[n] = new Sheet(n, wb[n]));
-  const ss = { getSheetByName: n => sheets[n] || null, insertSheet: n => (sheets[n] = new Sheet(n, [])) };
+  const ss = { getName: () => '測試資料庫', getSheets: () => Object.values(sheets), getSheetByName: n => sheets[n] || null, insertSheet: n => (sheets[n] = new Sheet(n, [])) };
 
   function fmtDate(d, tz, p) {
     const parts = {};

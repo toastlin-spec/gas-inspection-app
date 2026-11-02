@@ -8,7 +8,7 @@
  *   PHOTO_FOLDER_ID   「巡檢照片」資料夾 ID（必填）
  *   EXPORT_FOLDER_ID  「匯出暫存」資料夾 ID（第三階段匯出 Excel 使用）
  *   APP_NAME          App 名稱，預設「加油站巡檢」
- *   SHEET_ID          選填；程式不是從試算表建立時才需要
+ *   SHEET_ID          建議填寫：「加油站巡檢系統資料庫」網址 /d/ 後面那一段
  */
 
 const TZ = 'Asia/Taipei';
@@ -442,8 +442,8 @@ function checkData_() {
   const add = (level, sheet, msg) => out.push({ level: level, sheet: sheet, msg: msg });
   const ss = ss_();
   Object.keys(REQUIRED_HEADERS).forEach(name => {
-    const sh = ss.getSheetByName(name);
-    if (!sh) { add('錯誤', name, '找不到這個工作表'); return; }
+    const sh = sheetOrNull_(ss, name);
+    if (!sh) { add('錯誤', name, '找不到這個工作表（目前連到「' + ss.getName() + '」）'); return; }
     const headers = headers_(sh);
     const miss = REQUIRED_HEADERS[name].filter(h => headers.indexOf(h) < 0);
     if (miss.length) add('錯誤', name, '缺少欄位：' + miss.join('、') + '（可用選單「巡檢系統 › 補上缺少的欄位」）');
@@ -498,7 +498,7 @@ function setupSheets_() {
   const ss = ss_();
   const added = [];
   Object.keys(REQUIRED_HEADERS).forEach(name => {
-    let sh = ss.getSheetByName(name);
+    let sh = sheetOrNull_(ss, name);
     if (!sh) { sh = ss.insertSheet(name); }
     const headers = headers_(sh);
     const miss = REQUIRED_HEADERS[name].filter(h => headers.indexOf(h) < 0);
@@ -572,14 +572,26 @@ function riskDays_() {
 /* ============================== 試算表工具 ============================== */
 
 function ss_() {
-  const id = getProp_('SHEET_ID');
-  return id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActiveSpreadsheet();
+  const id = String(getProp_('SHEET_ID') || '').trim();
+  const ss = id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) throw new Error('程式沒有連到試算表：請在「專案設定 → 指令碼屬性」新增 SHEET_ID，值為「加油站巡檢系統資料庫」網址中 /d/ 後面那一段');
+  return ss;
 }
 
+/** 依名稱找工作表；忽略名稱前後多出的空白。找不到時列出目前連到的試算表與工作表，方便排查。 */
 function sheet_(name) {
-  const sh = ss_().getSheetByName(name);
-  if (!sh) throw new Error('找不到工作表「' + name + '」，請確認工作表名稱沒有被修改');
+  const ss = ss_();
+  const sh = ss.getSheetByName(name) || ss.getSheets().find(x => String(x.getName()).trim() === name);
+  if (!sh) {
+    const names = ss.getSheets().map(x => '「' + x.getName() + '」').join('、');
+    throw new Error('找不到工作表「' + name + '」。程式目前連到試算表「' + ss.getName() + '」，裡面的工作表有：' + names +
+      '。若這不是「加油站巡檢系統資料庫」，請在指令碼屬性新增 SHEET_ID');
+  }
   return sh;
+}
+
+function sheetOrNull_(ss, name) {
+  return ss.getSheetByName(name) || ss.getSheets().find(x => String(x.getName()).trim() === name) || null;
 }
 
 function headers_(sh) {

@@ -69,6 +69,13 @@ G.adminToggle(adm.token, 'items', 'SC-D02');
 assert(!G.getHome(mgr.token).items.some(i => i.code === 'SC-D02')); ok('停用項目後從檢查表消失');
 p = G.adminCheckData(adm.token); ok('資料檢查結果：' + p.map(x => `[${x.level}]${x.msg}`).join(' / '));
 
-console.log('F. 登出');
+console.log('F. 工作表名稱');
+sheets['設定 '] = sheets['設定']; sheets['設定 '].name = '設定 '; delete sheets['設定'];
+assert(G.checkPassword('12345').ok); ok('工作表名稱前後有空白仍可讀取');
+sheets['設定X'] = sheets['設定 ']; sheets['設定X'].name = '設定X'; delete sheets['設定 '];
+throws(() => G.checkPassword('12345'), /程式目前連到試算表「測試資料庫」，裡面的工作表有/, '找不到工作表時列出目前連到的試算表與工作表');
+sheets['設定'] = sheets['設定X']; sheets['設定'].name = '設定'; delete sheets['設定X'];
+
+console.log('G. 登出');
 G.logout(mgr.token); throws(() => G.getHome(mgr.token), /SESSION_EXPIRED/, '登出後 token 失效');
 console.log(`\n全部 ${n} 項通過`);
