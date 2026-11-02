@@ -1,0 +1,556 @@
+<title>加油站巡檢 App 雛形</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<style>
+/* Layout: one phone-width column (max 480px) — sticky station header, scrolling view, fixed bottom tab bar */
+:root{
+  --bg:#eef2f0; --surface:#ffffff; --sunken:#f6f8f7; --ink:#16201b; --muted:#5b6862; --line:#d5ddd9;
+  --accent:#1c7a4b; --accent-ink:#ffffff; --accent-soft:#dff0e6;
+  --bad:#c0352d; --bad-soft:#fbe8e6; --warn:#a86500; --warn-soft:#fbefd9; --na:#6f7b75; --na-soft:#e7ecea;
+  --font-body:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+  --r:12px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0e1411; --surface:#16201b; --sunken:#121a16; --ink:#e3ebe7; --muted:#93a29a; --line:#29352f;
+  --accent:#4cc38a; --accent-ink:#06130c; --accent-soft:#173326;
+  --bad:#ff7d70; --bad-soft:#3a1a17; --warn:#f0b24a; --warn-soft:#33260d; --na:#9aa7a0; --na-soft:#24302a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e1411; --surface:#16201b; --sunken:#121a16; --ink:#e3ebe7; --muted:#93a29a; --line:#29352f;
+  --accent:#4cc38a; --accent-ink:#06130c; --accent-soft:#173326;
+  --bad:#ff7d70; --bad-soft:#3a1a17; --warn:#f0b24a; --warn-soft:#33260d; --na:#9aa7a0; --na-soft:#24302a; color-scheme:dark}
+*{box-sizing:border-box}
+html,body{background:var(--bg)}
+body{color:var(--ink);font-family:var(--font-body);font-size:15px;line-height:1.55;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:var(--surface)}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{max-width:480px;margin:0 auto;padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
+.mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+.demo{margin-top:12px;font-size:12px;color:var(--warn);background:var(--warn-soft);border-radius:8px;padding:6px 10px}
+
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--surface);margin:0 calc(-1 * max(16px,env(safe-area-inset-left,0px)));padding:12px max(16px,env(safe-area-inset-left,0px)) 10px;border-bottom:1px solid var(--line)}
+.top-row{max-width:480px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.brand{display:flex;flex-direction:column;min-width:0}
+.brand b{font-size:16px;letter-spacing:.02em}
+.brand span{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.roles{max-width:480px;margin:10px auto 0;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
+.roles::-webkit-scrollbar{display:none}
+.roles small{font-size:11px;color:var(--muted);align-self:center;white-space:nowrap;letter-spacing:.06em}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:4px 12px;font-size:13px;white-space:nowrap}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+
+main{padding-top:16px;display:flex;flex-direction:column;gap:16px}
+h1{font-size:20px;margin:0;text-wrap:balance}
+h2{font-size:15px;margin:0;color:var(--muted);font-weight:500;letter-spacing:.04em}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px}
+.stack{display:flex;flex-direction:column;gap:12px}
+.row{display:flex;align-items:center;gap:10px}
+.between{justify-content:space-between}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+.todo{display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:var(--r);border:1px solid var(--line);background:var(--surface);text-align:left;width:100%}
+.todo .ic{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);flex:none}
+.todo.done .ic{background:var(--na-soft);color:var(--na)}
+.todo .tx{flex:1;min-width:0}
+.todo .tx b{display:block}
+.todo .tx span{font-size:13px;color:var(--muted)}
+.stat{padding:14px 16px}
+.stat b{font-size:28px;line-height:1.1;display:block}
+.stat span{font-size:13px;color:var(--muted)}
+.stat.alert b{color:var(--bad)}
+
+.light{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+.light:first-of-type{border-top:0}
+.dot{width:10px;height:10px;border-radius:50%}
+.dot.g{background:var(--accent)} .dot.y{background:var(--warn)} .dot.r{background:var(--bad)}
+
+.tabs{display:flex;background:var(--sunken);border:1px solid var(--line);border-radius:10px;padding:3px;gap:3px}
+.tabs button{flex:1;border:0;background:transparent;border-radius:8px;padding:8px 4px;font-size:14px;color:var(--muted)}
+.tabs button[aria-selected="true"]{background:var(--surface);color:var(--ink);font-weight:700;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+
+.cat{font-size:13px;font-weight:700;color:var(--muted);letter-spacing:.06em;margin:4px 2px -4px}
+.item{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;display:flex;flex-direction:column;gap:10px}
+.item.bad{border-color:var(--bad);box-shadow:inset 3px 0 0 var(--bad)}
+.item.err{border-color:var(--warn);box-shadow:inset 3px 0 0 var(--warn)}
+.item-head{display:flex;gap:10px;align-items:flex-start}
+.code{font-family:var(--font-mono);font-size:11px;color:var(--muted);background:var(--sunken);border:1px solid var(--line);border-radius:6px;padding:1px 6px;white-space:nowrap}
+.item p{margin:0;flex:1;min-width:0}
+.law{font-size:12px;color:var(--muted)}
+.seg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.seg button{min-height:44px;border:1px solid var(--line);background:var(--sunken);border-radius:10px;font-weight:500}
+.seg button[aria-pressed="true"].ok{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.seg button[aria-pressed="true"].ng{background:var(--bad);border-color:var(--bad);color:#fff}
+.seg button[aria-pressed="true"].na{background:var(--na);border-color:var(--na);color:var(--surface)}
+.pts{font-family:var(--font-mono);font-size:12px;color:var(--muted);white-space:nowrap}
+.risk{font-size:11px;border-radius:6px;padding:1px 6px;font-weight:700;white-space:nowrap}
+.risk.高{background:var(--bad-soft);color:var(--bad)} .risk.中{background:var(--warn-soft);color:var(--warn)} .risk.低{background:var(--na-soft);color:var(--na)}
+
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{font-size:13px;color:var(--muted)}
+input[type=text],input[type=email],select,textarea{width:100%;border:1px solid var(--line);background:var(--sunken);border-radius:10px;padding:10px 12px;min-height:44px}
+textarea{min-height:72px;resize:vertical}
+.photo{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.photo label.btn{display:inline-flex;align-items:center;gap:6px}
+.photo input{position:absolute;opacity:0;width:1px;height:1px}
+.thumb{width:56px;height:56px;border-radius:8px;object-fit:cover;border:1px solid var(--line)}
+.ph{width:72px;height:72px;border-radius:8px;border:1px dashed var(--line);display:grid;place-items:center;font-size:11px;color:var(--muted);background:var(--sunken);text-align:center;padding:4px}
+
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:10px 14px;min-height:44px;font-weight:500}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.danger{background:var(--bad-soft);border-color:var(--bad);color:var(--bad)}
+.btn.block{width:100%}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+
+.dock{position:sticky;bottom:calc(76px + env(safe-area-inset-bottom,0px));z-index:10;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px;box-shadow:0 6px 20px rgba(10,30,20,.12);display:flex;flex-direction:column;gap:10px}
+.bar{height:6px;border-radius:3px;background:var(--na-soft);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent);transition:width .25s}
+.score{display:flex;align-items:baseline;gap:6px}
+.score b{font-family:var(--font-mono);font-size:34px;line-height:1}
+.counts{display:flex;gap:12px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+.counts b{font-family:var(--font-mono);color:var(--ink)}
+
+details.sec{background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+details.sec>summary{list-style:none;padding:14px 16px;display:flex;align-items:center;gap:10px;cursor:pointer}
+details.sec>summary::-webkit-details-marker{display:none}
+details.sec>summary b{flex:1}
+details.sec[open]>summary{border-bottom:1px solid var(--line)}
+details.sec .body{padding:12px;display:flex;flex-direction:column;gap:10px;background:var(--sunken);border-radius:0 0 var(--r) var(--r)}
+.chev{transition:transform .2s;color:var(--muted)}
+details.sec[open] .chev{transform:rotate(90deg)}
+
+.filters{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+.filters::-webkit-scrollbar{display:none}
+.issue{display:grid;grid-template-columns:1fr auto;gap:4px 10px;padding:14px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);text-align:left;width:100%}
+.issue.over{border-color:var(--bad);box-shadow:inset 3px 0 0 var(--bad)}
+.issue .t{font-weight:700;min-width:0}
+.issue .m{grid-column:1/-1;font-size:12px;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.st{font-size:12px;border-radius:999px;padding:2px 10px;font-weight:500;white-space:nowrap;align-self:start}
+.st.待處理{background:var(--bad-soft);color:var(--bad)} .st.改善中{background:var(--warn-soft);color:var(--warn)}
+.st.待驗證{background:var(--accent-soft);color:var(--accent)} .st.已結案{background:var(--na-soft);color:var(--na)}
+.over-tag{color:var(--bad);font-weight:700}
+
+.sheet-wrap{position:fixed;inset:0;z-index:40;background:rgba(5,15,10,.45);display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--bg);width:100%;max-width:480px;max-height:88%;overflow-y:auto;border-radius:16px 16px 0 0;padding:16px max(16px,env(safe-area-inset-left,0px)) calc(20px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:14px}
+.sheet-head{display:flex;align-items:flex-start;gap:10px}
+.sheet-head h1{flex:1;font-size:18px}
+.iconbtn{border:0;background:var(--na-soft);border-radius:50%;width:36px;height:36px;display:grid;place-items:center;flex:none}
+.timeline{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.timeline li{position:relative;padding:0 0 14px 20px;font-size:13px}
+.timeline li::before{content:"";position:absolute;left:4px;top:6px;width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.timeline li::after{content:"";position:absolute;left:7.5px;top:16px;bottom:0;width:1px;background:var(--line)}
+.timeline li:last-child::after{display:none}
+.timeline .who{color:var(--muted)}
+
+.list-row{display:grid;grid-template-columns:1fr auto;gap:2px 10px;align-items:center;padding:12px 0;border-top:1px solid var(--line)}
+.list-row:first-child{border-top:0}
+.list-row .sub{font-size:12px;color:var(--muted);grid-column:1}
+.list-row>div{min-width:0}
+.switch{position:relative;width:44px;height:26px;border-radius:13px;border:0;background:var(--na-soft);flex:none}
+.switch::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:var(--surface);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:left .15s}
+.switch[aria-checked="true"]{background:var(--accent)}
+.switch[aria-checked="true"]::after{left:21px}
+.off{opacity:.5}
+
+.done-card{text-align:center;padding:28px 16px}
+.done-card .big{width:64px;height:64px;border-radius:50%;margin:0 auto 12px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent)}
+.msg{font-size:13px;color:var(--bad)}
+
+nav.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:25;background:var(--surface);border-top:1px solid var(--line);padding:6px max(8px,env(safe-area-inset-left,0px)) calc(6px + env(safe-area-inset-bottom,0px))}
+nav.tabbar .in{max-width:480px;margin:0 auto;display:flex}
+nav.tabbar a{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 0;font-size:11px;color:var(--muted);text-decoration:none;position:relative}
+nav.tabbar a[aria-current="page"]{color:var(--accent);font-weight:700}
+nav.tabbar .badge{position:absolute;top:2px;left:calc(50% + 6px);background:var(--bad);color:#fff;border-radius:999px;font-size:10px;min-width:16px;height:16px;display:grid;place-items:center;padding:0 4px;font-family:var(--font-mono)}
+svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+svg.i.s{width:18px;height:18px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(90px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--surface);padding:10px 16px;border-radius:999px;font-size:14px;z-index:50;max-width:calc(100% - 32px)}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+
+<div class="app">
+  <header class="top">
+    <div class="top-row">
+      <div class="brand"><b>加油站巡檢</b><span id="ctx"></span></div>
+      <select id="stationSel" aria-label="切換站點" style="width:auto;min-height:36px;padding:6px 10px;font-size:13px"></select>
+    </div>
+    <div class="roles" role="group" aria-label="示範角色" id="roles"></div>
+  </header>
+  <main id="view"></main>
+</div>
+<nav class="tabbar" aria-label="主選單"><div class="in" id="tabbar"></div></nav>
+<div id="sheet"></div>
+<div id="toast" class="toast" hidden></div>
+
+<script>
+const ICON={
+ home:'<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
+ check:'<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/>',
+ audit:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>',
+ issues:'<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+ manage:'<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>',
+ camera:'<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3"/>',
+ chev:'<path d="m9 18 6-6-6-6"/>', x:'<path d="M18 6 6 18M6 6l12 12"/>', ok:'<path d="M20 6 9 17l-5-5"/>'
+};
+const ic=(n,c='')=>`<svg class="i ${c}" viewBox="0 0 24 24" aria-hidden="true">${ICON[n]}</svg>`;
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const TODAY=new Date(); TODAY.setHours(0,0,0,0);
+const addDays=(d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x};
+const md=d=>`${d.getMonth()+1}/${String(d.getDate()).padStart(2,'0')}`;
+const RISK_DAYS={高:1,中:3,低:7};
+
+/* ---------- 範例資料 ---------- */
+const S={
+ role:'站務人員', station:'ST001',
+ stations:[
+  {code:'ST001',name:'和美站',region:'中區',on:true,daily:'none',audit:{date:'08/14',score:94.8}},
+  {code:'ST002',name:'鹿港站',region:'中區',on:true,daily:'done',audit:{date:'09/03',score:97.9}},
+  {code:'ST003',name:'員林站',region:'中區',on:true,daily:'part',audit:{date:'07/22',score:88.5}},
+  {code:'ST004',name:'大肚站',region:'中區',on:true,daily:'done',audit:{date:'09/18',score:100}},
+  {code:'ST005',name:'斗六站',region:'南區',on:true,daily:'none',audit:{date:'08/27',score:91.7}},
+  {code:'ST006',name:'新營站',region:'南區',on:true,daily:'done',audit:{date:'09/09',score:95.8}}],
+ users:[
+  {email:'staff01@example.com',name:'王小明',role:'站務人員',station:'ST001',on:true},
+  {email:'mgr01@example.com',name:'陳志豪',role:'站長',station:'ST001',on:true},
+  {email:'safety01@example.com',name:'林安保',role:'安保專員',station:'中區',on:true},
+  {email:'admin01@example.com',name:'職安衛管理員',role:'系統管理員',station:'全部',on:true}],
+ items:[
+  ['SC-D01','每日','環境','地面無油漬、無積水、吸油棉與砂箱存量足夠','職業安全衛生設施規則','中'],
+  ['SC-D02','每日','環境','其它危害','職業安全衛生設施規則','低'],
+  ['SC-W01','每週','環境','油水分離槽無溢流','水污染防治法','中'],
+  ['SC-M01','每月','消防','滅火器在定位、壓力指針在綠區、無遮擋、無逾期','消防法、各類場所消防安全設備設置標準','高'],
+  ['SC-M02','每月','消防','滅火器外觀、有效期限、壓力逐支點檢','消防安全設備檢修及申報辦法','高'],
+  ['SC-M03','每月','加油設備','加油機無漏油、油槍及軟管無破損、緊急遮斷閥、內部有無積水、防爆管線及防爆接線盒良好','加油站設置管理規則','高'],
+  ['SC-M04','每月','油槽','油槽人孔及卸油口蓋妥上鎖、周邊無油漬，壓力錶顯示狀態、陰井是否有漏油、氣或積水','公共危險物品及可燃性高壓氣體設置標準暨安全管理辦法','高'],
+  ['SC-M05','每月','環境','「嚴禁煙火」「加油請熄火」「不強迫加油」標示清楚，進出口標誌、標線清楚良好','加油站設置管理規則','中'],
+  ['SC-M06','每月','電氣','配電箱關閉、無異常聲響或焦味','職業安全衛生設施規則','中'],
+  ['SC-M07','每月','電氣','漏電斷路器按測試鈕可跳脫、接地線完整','職業安全衛生設施規則','高'],
+  ['SC-M08','每月','緊急應變','急救箱藥品齊全且未過期','職業安全衛生設施規則','低'],
+  ['SC-M09','每月','監控','監視器畫面清晰、錄影可回放','公司規定','低']
+ ].map(([code,freq,cat,text,law,risk])=>({code,form:'自主檢查',freq,cat,text,law,risk,pts:null,on:true}))
+  .concat([{"code": "H015-A01", "form": "SL-H015", "freq": "每季", "cat": "一、專業證照", "text": "丙級勞工安全衛生業務主管", "law": "勞自辦法第3條", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-A02", "form": "SL-H015", "freq": "每季", "cat": "一、專業證照", "text": "急救人員（每班設置一人）", "law": "保護規則第9條", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-A03", "form": "SL-H015", "freq": "每季", "cat": "一、專業證照", "text": "有機溶劑作業主管（每班設置一人）", "law": "有機溶劑中毒預防規則第19、20條", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-A04", "form": "SL-H015", "freq": "每季", "cat": "一、專業證照", "text": "道路危險物品運送人員", "law": "道路交通安全規則第84條", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-B01", "form": "SL-H015", "freq": "每季", "cat": "二、安全衛生管理", "text": "新進員工體格檢查紀錄、在職員工定期健康檢查紀錄", "law": "安衛法第20條 、 保護規則第15、17條", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-B02", "form": "SL-H015", "freq": "每季", "cat": "二、安全衛生管理", "text": "依規定配置急救藥品器材", "law": "保護規則第9條", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-B03", "form": "SL-H015", "freq": "每季", "cat": "二、安全衛生管理", "text": "新進及變更職務員工安全衛生教育訓練紀錄，至少3小時，從事危險物相關作業之勞工實施教育訓練，增列3小時", "law": "安衛法第32條、  教育訓練規則第13條", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-B04", "form": "SL-H015", "freq": "每季", "cat": "二、安全衛生管理", "text": "在職員工安全衛生教育訓練紀錄，每年1小時，從事危險物相關作業之勞工實施教育訓練，增列1小時", "law": "教育訓練規則第16條", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-B05", "form": "SL-H015", "freq": "每季", "cat": "二、安全衛生管理", "text": "依規定訂定安全衛生工作守則", "law": "安衛法第34條", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-B06", "form": "SL-H015", "freq": "每季", "cat": "二、安全衛生管理", "text": "應於顯明易見之場所公告受理勞工申訴之機構、人員、範圍、格式及申訴程序", "law": "勞動檢查法第32條", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-B07", "form": "SL-H015", "freq": "每季", "cat": "二、安全衛生管理", "text": "其他（查核人自行填寫）", "law": "", "risk": "低", "pts": 1, "on": true, "other": true}, {"code": "H015-C01", "form": "SL-H015", "freq": "每季", "cat": "三、安全衛生設施", "text": "勞工工作場所之通道、地板、階梯應保持不致使勞工跌倒、滑倒、踩傷等之安全狀態，或採取必要之預防措施", "law": "設施規則第21條", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-C02", "form": "SL-H015", "freq": "每季", "cat": "三、安全衛生設施", "text": "安全門及安全梯於勞工工作期間內未上鎖，其通道不能堆置物品", "law": "設施規則第27條", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-C03", "form": "SL-H015", "freq": "每季", "cat": "三、安全衛生設施", "text": "工作場所出入口、樓梯、通道、安全門、安全梯等，應設置適當之採光或照明。必要時應視需要設置平常照明系統失效時使用之緊急照明系統", "law": "設施規則第30、313條", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-C04", "form": "SL-H015", "freq": "每季", "cat": "三、安全衛生設施", "text": "室內工作場所主要人行道不得小於1公尺、有關安全門、安全梯應設置明顯標示", "law": "設施規則第31條", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-C05", "form": "SL-H015", "freq": "每季", "cat": "三、安全衛生設施", "text": "空壓機傳動帶應設置護罩、接地裝置，每年並須實施定期檢查一次", "law": "設施規則第43條、勞自法第35條", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-C06", "form": "SL-H015", "freq": "每季", "cat": "三、安全衛生設施", "text": "離心機械（洗衣機、脫水機）應設置覆蓋及連鎖裝置", "law": "設施規則第73條", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-C07", "form": "SL-H015", "freq": "每季", "cat": "三、安全衛生設施", "text": "配電盤應設分格板（內板）及標示開關類別", "law": "屋內線路裝置規則第7條第1項第28款", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-C08", "form": "SL-H015", "freq": "每季", "cat": "三、安全衛生設施", "text": "對於發電室、變電室、或受電室內之電路附近，不得堆放任何與電路無關之物件或放置床、舖、衣架等", "law": "設施規則第275條第1項", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-C09", "form": "SL-H015", "freq": "每季", "cat": "三、安全衛生設施", "text": "發電室、變電室或受電室，應標示「非相關工作人員不得任意進入」", "law": "設施規則第276條", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-C10", "form": "SL-H015", "freq": "每季", "cat": "三、安全衛生設施", "text": "電氣設備應標示「不得以濕手操作開關」、「非職權範圍，不得擅自操作」", "law": "", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-C11", "form": "SL-H015", "freq": "每季", "cat": "三、安全衛生設施", "text": "低壓用電設備應加接地，如空壓機、馬達等", "law": "設施規則第239條", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-C12", "form": "SL-H015", "freq": "每季", "cat": "三、安全衛生設施", "text": "洗車機、洗車高壓噴槍等潮濕場所之電氣設備、由戶內遷至戶外所使用之電氣設備應裝設漏電斷路器", "law": "設施規則第243條", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-C13", "form": "SL-H015", "freq": "每季", "cat": "三、安全衛生設施", "text": "營業室前適當位置張貼有機溶劑作業規定注意事項公告板，勞工應就其作業有關事項實施檢點", "law": "有機溶劑規則第20條、勞自辦法第69、72條", "risk": "高", "pts": 3, "on": true, "other": false}, {"code": "H015-C14", "form": "SL-H015", "freq": "每季", "cat": "三、安全衛生設施", "text": "其他（查核人自行填寫）", "law": "", "risk": "低", "pts": 1, "on": true, "other": true}, {"code": "H015-D01", "form": "SL-H015", "freq": "每季", "cat": "四、營業設備", "text": "營業室內無儲存輕質揮發性小包裝油品", "law": "加油站設置管理規則第29條", "risk": "高", "pts": 3, "on": true, "other": false}, {"code": "H015-D02", "form": "SL-H015", "freq": "每季", "cat": "四、營業設備", "text": "是否於儲油槽區設置「嚴禁煙火」及加油區設置「熄火加油」、「嚴禁煙火」之警戒標誌，並以紅底白字標示金屬板製作", "law": "加油站設置管理規則第14條、設施規則第171條", "risk": "高", "pts": 3, "on": true, "other": false}, {"code": "H015-D03", "form": "SL-H015", "freq": "每季", "cat": "四、營業設備", "text": "是否於明顯處所標示營業主體、加油站站名、營業時間、售油種類、油品價格及供油廠商標誌或名稱？", "law": "加油站設置管理規則第14條", "risk": "高", "pts": 3, "on": true, "other": false}, {"code": "H015-D04", "form": "SL-H015", "freq": "每季", "cat": "四、營業設備", "text": "加油站出入口是否設方向標誌？並於地面劃白色箭頭標線。是否設置雨棚高度標誌？（其高度：公尺）", "law": "加油站設置管理規則第14條", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-D05", "form": "SL-H015", "freq": "每季", "cat": "四、營業設備", "text": "儲油槽之卸油區地面黃線標示清楚", "law": "加油站設置管理規則第14條", "risk": "高", "pts": 3, "on": true, "other": false}, {"code": "H015-D06", "form": "SL-H015", "freq": "每季", "cat": "四、營業設備", "text": "卸油口應漆上不同顏色油漆或不同口徑卸油口，以防卸錯油料，卸油口不使用時應加鎖", "law": "", "risk": "高", "pts": 3, "on": true, "other": false}, {"code": "H015-D07", "form": "SL-H015", "freq": "每季", "cat": "四、營業設備", "text": "加油站第一種及第二種危險場所，無置放電氣設備，或電氣設備應具該場所適用之防爆性能", "law": "設施規則第239條、屋內線路裝置規則第310條", "risk": "高", "pts": 3, "on": true, "other": false}, {"code": "H015-D08", "form": "SL-H015", "freq": "每季", "cat": "四、營業設備", "text": "於卸油口、雨棚柱上張貼危害標示公告板(汽油、超柴)", "law": "", "risk": "高", "pts": 3, "on": true, "other": false}, {"code": "H015-D09", "form": "SL-H015", "freq": "每季", "cat": "四、營業設備", "text": "加油站之建築物高度在三公尺以上者，應裝設避雷設備", "law": "建築技術規則建築設備編第20條", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-D10", "form": "SL-H015", "freq": "每季", "cat": "四、營業設備", "text": "其他（查核人自行填寫）", "law": "", "risk": "低", "pts": 1, "on": true, "other": true}, {"code": "H015-E01", "form": "SL-H015", "freq": "每季", "cat": "五、危害通識", "text": "採樣(取樣)瓶應依規定之分類、圖示及格式明顯標示", "law": "危害通識規則第5條", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-E02", "form": "SL-H015", "freq": "每季", "cat": "五、危害通識", "text": "物質安全資料表應置於工作場所中易取得之處（至少每三年更新一次）", "law": "危害通識規則第13、15、17條", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-E03", "form": "SL-H015", "freq": "每季", "cat": "五、危害通識", "text": "有無訂定危害通識計畫及製作危害物質清單", "law": "危險物及有害物通識規則第17條", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-F01", "form": "SL-H015", "freq": "每季", "cat": "六、消防管理", "text": "防火避難設施每月應實施定期檢查一次", "law": "消防法施行細則第15條", "risk": "高", "pts": 3, "on": true, "other": false}, {"code": "H015-F02", "form": "SL-H015", "freq": "每季", "cat": "六、消防管理", "text": "滅火器藥劑有無過期、外觀是否損傷", "law": "", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-F03", "form": "SL-H015", "freq": "每季", "cat": "六、消防管理", "text": "緊急照明燈及避難指示燈測試是否良好", "law": "", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-F04", "form": "SL-H015", "freq": "每季", "cat": "六、消防管理", "text": "防火避難設施是否與平面配置圖相符", "law": "", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-F05", "form": "SL-H015", "freq": "每季", "cat": "六、消防管理", "text": "滅火器固定放置於取用方便之明顯處所，並設有長邊二十四公分以上，短邊八公分以上，以紅底白字標明滅火器字樣之標識", "law": "各類場所消防安全設備設置標準第31條第4項", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-F06", "form": "SL-H015", "freq": "每季", "cat": "六、消防管理", "text": "懸掛於牆上或放置滅火器箱中之滅火器，其上端與樓地板面之距離，十八公斤以上者在一公尺以下，未滿十八公斤者在一點五公尺以下", "law": "各類場所消防安全設備設置標準第31條第5項", "risk": "中", "pts": 2, "on": true, "other": false}, {"code": "H015-F07", "form": "SL-H015", "freq": "每季", "cat": "六、消防管理", "text": "其他（查核人自行填寫）", "law": "", "risk": "低", "pts": 1, "on": true, "other": true}, {"code": "H015-G01", "form": "SL-H015", "freq": "每季", "cat": "七、其他", "text": "能源局製發「加油站營運設備自行安全檢查手冊」依規定填寫，並保存1年以上", "law": "加油站設置管理規則第29條", "risk": "高", "pts": 5, "on": true, "other": false}]),
+ issues:[],
+ check:{freq:'每日',ans:{},note:{},photo:{},submitted:null,tried:false},
+ audit:{ans:{},other:{},submitted:null,confirmed:false,tried:false},
+ issueFilter:'未結案', manageTab:'站點', itemForm:'自主檢查', sheet:null
+};
+let seq=4;
+S.issues=[
+ {id:'ISS-0001',station:'ST001',src:'自主檢查',code:'SC-M01',title:'滅火器壓力指針在紅區（加油島 2 號）',risk:'高',status:'待處理',created:addDays(TODAY,-3),due:addDays(TODAY,-2),
+  log:[{t:addDays(TODAY,-3),who:'王小明（站務人員）',text:'通報異常，附照片 1 張'}]},
+ {id:'ISS-0002',station:'ST001',src:'SL-H015',code:'H015-D06',title:'卸油口未加鎖（95 無鉛）',risk:'高',status:'待驗證',created:addDays(TODAY,-2),due:addDays(TODAY,-1),
+  log:[{t:addDays(TODAY,-2),who:'林安保（安保專員）',text:'季查核不符合'},{t:addDays(TODAY,-1),who:'陳志豪（站長）',text:'已更換卸油口鎖，附改善後照片'}]},
+ {id:'ISS-0003',station:'ST001',src:'自主檢查',code:'SC-D01',title:'加油島地面油漬未清除',risk:'中',status:'改善中',created:addDays(TODAY,-1),due:addDays(TODAY,2),
+  log:[{t:addDays(TODAY,-1),who:'王小明（站務人員）',text:'通報異常'},{t:TODAY,who:'陳志豪（站長）',text:'指派清潔，今日完成'}]},
+ {id:'ISS-0004',station:'ST001',src:'自主檢查',code:'SC-M08',title:'急救箱優碘過期',risk:'低',status:'已結案',created:addDays(TODAY,-12),due:addDays(TODAY,-5),closed:addDays(TODAY,-6),
+  log:[{t:addDays(TODAY,-12),who:'王小明（站務人員）',text:'通報異常'},{t:addDays(TODAY,-8),who:'陳志豪（站長）',text:'已補充藥品'},{t:addDays(TODAY,-6),who:'林安保（安保專員）',text:'驗證合格，結案'}]}
+];
+S.items.filter(i=>i.form==='SL-H015'&&i.other).forEach(i=>S.audit.ans[i.code]='na');
+
+const ROLES=['站務人員','站長','安保專員','系統管理員'];
+const TABS={
+ home:{label:'首頁',icon:'home',roles:ROLES},
+ check:{label:'自主檢查',icon:'check',roles:['站務人員','站長']},
+ audit:{label:'查核',icon:'audit',roles:['安保專員']},
+ issues:{label:'異常',icon:'issues',roles:['站務人員','站長','安保專員']},
+ manage:{label:'管理',icon:'manage',roles:['系統管理員']}
+};
+const stName=c=>(S.stations.find(s=>s.code===c)||{}).name||c;
+const isOver=i=>i.status!=='已結案'&&i.due<TODAY;
+const toastT=m=>{const t=document.getElementById('toast');t.textContent=m;t.hidden=false;clearTimeout(t._h);t._h=setTimeout(()=>t.hidden=true,2200)};
+const route=()=>{let r=(location.hash||'').slice(1);if(!TABS[r]||!TABS[r].roles.includes(S.role))r='home';return r};
+const go=r=>{if(location.hash==='#'+r)render();else location.hash=r};
+
+/* ---------- 共用片段 ---------- */
+function itemsFor(form,freq){return S.items.filter(i=>i.on&&i.form===form&&(!freq||i.freq===freq))}
+function groupBy(arr,k){const m=new Map();arr.forEach(x=>{if(!m.has(x[k]))m.set(x[k],[]);m.get(x[k]).push(x)});return m}
+
+/* ---------- 首頁 ---------- */
+function vHome(){
+ const st=S.station, mine=S.issues.filter(i=>i.station===st&&i.status!=='已結案');
+ const over=mine.filter(isOver).length;
+ if(S.role==='安保專員'||S.role==='系統管理員'){
+  const region=S.role==='安保專員'?'中區':null;
+  const list=S.stations.filter(s=>s.on&&(!region||s.region===region));
+  const lab={done:['g','已完成'],part:['y','部分完成'],none:['r','未做']};
+  const waitV=S.issues.filter(i=>i.status==='待驗證').length;
+  const overAll=S.issues.filter(isOver).length;
+  return `<h1>${region?region+'總覽':'全區總覽'}</h1>
+  <div class="grid2">
+   <a class="panel stat" href="#issues" style="text-decoration:none;color:inherit"><b class="mono">${waitV}</b><span>件待我驗證</span></a>
+   <div class="panel stat ${overAll?'alert':''}"><b class="mono">${overAll}</b><span>件逾期未改善</span></div>
+  </div>
+  <section class="panel"><div class="row between" style="margin-bottom:6px"><h2>今日每日檢查</h2><span class="small muted">${md(TODAY)}</span></div>
+   ${list.map(s=>`<div class="light"><span class="dot ${lab[s.daily][0]}"></span><div><b>${esc(s.name)}</b> <span class="small muted mono">${s.code}</span></div><span class="small ${s.daily==='none'?'over-tag':'muted'}">${lab[s.daily][1]}</span></div>`).join('')}
+  </section>
+  <section class="panel"><div class="row between" style="margin-bottom:6px"><h2>最近一次 SL-H015 查核</h2><span class="small muted">每站每季一次</span></div>
+   ${list.map(s=>`<div class="light"><span class="dot ${s.audit.score>=95?'g':s.audit.score>=90?'y':'r'}"></span><div><b>${esc(s.name)}</b> <span class="small muted">${s.audit.date}</span></div><span class="mono">${s.audit.score.toFixed(1)} 分</span></div>`).join('')}
+  </section>
+  <p class="demo">畫面中的站點、人員與分數都是範例資料，僅供操作示範。</p>`;
+ }
+ const dailyDone=S.check.submitted&&S.check.submitted.freq==='每日';
+ return `<h1>${esc(stName(st))}・${md(TODAY)}</h1>
+ <section class="stack"><h2>今日待辦</h2>
+  <button class="todo ${dailyDone?'done':''}" data-act="startCheck" data-freq="每日"><span class="ic">${ic(dailyDone?'ok':'check')}</span><span class="tx"><b>每日自主檢查</b><span>${dailyDone?'已送出':itemsFor('自主檢查','每日').length+' 項・約 2 分鐘'}</span></span>${ic('chev','s')}</button>
+  <button class="todo" data-act="startCheck" data-freq="每週"><span class="ic">${ic('check')}</span><span class="tx"><b>每週自主檢查</b><span>${itemsFor('自主檢查','每週').length} 項・本週尚未填寫</span></span>${ic('chev','s')}</button>
+  <button class="todo" data-act="startCheck" data-freq="每月"><span class="ic">${ic('check')}</span><span class="tx"><b>每月自主檢查</b><span>${itemsFor('自主檢查','每月').length} 項・本月尚未填寫</span></span>${ic('chev','s')}</button>
+ </section>
+ <div class="grid2">
+  <a class="panel stat" href="#issues" style="text-decoration:none;color:inherit"><b class="mono">${mine.length}</b><span>件未結案異常</span></a>
+  <div class="panel stat ${over?'alert':''}"><b class="mono">${over}</b><span>件已逾期</span></div>
+ </div>
+ <p class="demo">這是操作雛形，資料不會儲存；重新整理頁面就會回到範例狀態。</p>`;
+}
+
+/* ---------- 自主檢查 ---------- */
+function vCheck(){
+ const c=S.check;
+ if(c.submitted){
+  const n=c.submitted.abn;
+  return `<div class="panel done-card"><div class="big">${ic('ok')}</div><h1>${c.submitted.freq}檢查已送出</h1>
+   <p class="muted">${esc(stName(S.station))}・${md(TODAY)}・${c.submitted.total} 項</p>
+   <p>${n?`發現 <b class="over-tag">${n}</b> 項異常，已建立異常追蹤${c.submitted.high?'，高風險項目已寄 Email 通知站長與安保專員':''}。`:'全部正常，沒有異常項目。'}</p>
+   <div class="stack" style="margin-top:16px">${n?`<a class="btn primary block" href="#issues" style="text-decoration:none;display:block">查看異常</a>`:''}<button class="btn block" data-act="resetCheck">回到檢查表</button></div></div>`;
+ }
+ const list=itemsFor('自主檢查',c.freq);
+ const answered=list.filter(i=>c.ans[i.code]).length;
+ const g=groupBy(list,'cat');
+ let html=`<div class="row between"><h1>自主檢查</h1><span class="small muted">${esc(stName(S.station))}</span></div>
+ <div class="tabs" role="tablist">${['每日','每週','每月'].map(f=>`<button role="tab" aria-selected="${c.freq===f}" data-act="freq" data-freq="${f}">${f}</button>`).join('')}</div>`;
+ for(const [cat,arr] of g){
+  html+=`<div class="cat">${esc(cat)}</div>`;
+  for(const i of arr){
+   const a=c.ans[i.code], err=c.tried&&(!a||(a==='ng'&&!(c.note[i.code]||'').trim()));
+   html+=`<div class="item ${a==='ng'?'bad':''} ${err&&a!=='ng'?'err':''}" id="it-${i.code}">
+    <div class="item-head"><span class="code">${i.code}</span><p>${esc(i.text)}</p><span class="risk ${i.risk}">${i.risk}</span></div>
+    <div class="seg" role="group" aria-label="${esc(i.text)}">
+     <button class="ok" aria-pressed="${a==='ok'}" data-act="ans" data-code="${i.code}" data-v="ok">正常</button>
+     <button class="ng" aria-pressed="${a==='ng'}" data-act="ans" data-code="${i.code}" data-v="ng">異常</button>
+     <button class="na" aria-pressed="${a==='na'}" data-act="ans" data-code="${i.code}" data-v="na">不適用</button>
+    </div>
+    ${a==='ng'?`<div class="field"><label for="n-${i.code}">異常說明（必填）</label><textarea id="n-${i.code}" data-note="${i.code}" placeholder="例如：2 號加油島滅火器壓力指針在紅區">${esc(c.note[i.code]||'')}</textarea></div>
+     <div class="photo">${c.photo[i.code]?`<img class="thumb" src="${c.photo[i.code]}" alt="異常照片">`:''}<label class="btn" for="p-${i.code}">${ic('camera','s')}${c.photo[i.code]?'重拍':'拍照'}</label><input type="file" accept="image/*" capture="environment" id="p-${i.code}" data-photo="${i.code}"><span class="small muted">${i.risk==='高'?'高風險：送出後立即通知':'改善期限 '+RISK_DAYS[i.risk]+' 天'}</span></div>
+     ${err?'<p class="msg">請填寫異常說明</p>':''}`:''}
+    ${err&&!a?'<p class="msg" style="color:var(--warn)">此項尚未選擇</p>':''}
+    <div class="law">依據：${esc(i.law)}</div></div>`;
+  }
+ }
+ if(!list.length)html+=`<div class="panel muted">此頻率目前沒有啟用的檢查項目，可到「管理 › 檢查項目」新增。</div>`;
+ const abn=list.filter(i=>c.ans[i.code]==='ng').length;
+ html+=`<div class="dock"><div class="row between small"><span>已完成 <b class="mono">${answered}</b> / <span class="mono">${list.length}</span></span><span class="${abn?'over-tag':'muted'}">異常 <span class="mono">${abn}</span> 項</span></div>
+  <div class="bar"><i style="width:${list.length?answered/list.length*100:0}%"></i></div>
+  <button class="btn primary block" data-act="submitCheck" ${list.length?'':'disabled'}>送出${c.freq}檢查</button></div>`;
+ return html;
+}
+
+/* ---------- SL-H015 查核 ---------- */
+function auditScore(){
+ const items=itemsFor('SL-H015'); let pass=0,na=0,ng=0,todo=0,cntOk=0,cntNa=0;
+ items.forEach(i=>{const a=S.audit.ans[i.code];if(a==='ok'){pass+=i.pts;cntOk++}else if(a==='na'){na+=i.pts;cntNa++}else if(a==='ng')ng++;else todo++});
+ const total=items.reduce((s,i)=>s+i.pts,0), base=total-na;
+ return {pass,na,base,total,ng,todo,cntOk,cntNa,score:base>0?Math.round(pass/base*1000)/10:null,n:items.length};
+}
+function vAudit(){
+ const a=S.audit, sc=auditScore();
+ if(a.submitted){
+  return `<div class="panel done-card"><div class="big">${ic('audit')}</div><h1>${esc(stName(a.submitted.station))} 查核完成</h1>
+   <div class="score" style="justify-content:center;margin:8px 0"><b>${a.submitted.score==null?'—':a.submitted.score.toFixed(1)}</b><span class="muted">分</span></div>
+   <p class="muted small">符合 ${a.submitted.pass} 分 ÷ 滿分基準 ${a.submitted.base} 分 × 100</p>
+   <p>${a.submitted.ng?`不符合 <b class="over-tag">${a.submitted.ng}</b> 項，已依配分建立異常追蹤。`:'全部符合。'}</p>
+   ${a.confirmed?`<p class="small" style="color:var(--accent)">${ic('ok','s')} 站長已於 ${md(TODAY)} 確認查核結果</p>`:`<div class="panel" style="background:var(--warn-soft);border-color:var(--warn);text-align:left;margin-top:12px"><b>等待站長確認</b><p class="small" style="margin:4px 0 10px">站長在自己的手機按「確認查核結果」後，取代紙本簽名。這裡先模擬站長確認。</p><button class="btn block" data-act="mgrConfirm">模擬：站長確認查核結果</button></div>`}
+   <div class="stack" style="margin-top:16px"><a class="btn primary block" href="#issues" style="text-decoration:none;display:block">查看異常</a><button class="btn block" data-act="resetAudit">開始新的查核</button></div></div>`;
+ }
+ const g=groupBy(itemsFor('SL-H015'),'cat');
+ let html=`<div class="row between"><h1>SL-H015 季查核</h1><span class="code">0601 版</span></div>
+ <div class="field"><label for="auditStation">受查站點</label><select id="auditStation">${S.stations.filter(s=>s.on&&s.region==='中區').map(s=>`<option value="${s.code}" ${s.code===S.station?'selected':''}>${esc(s.name)}（${s.code}）</option>`).join('')}</select></div>`;
+ let first=true;
+ for(const [cat,arr] of g){
+  const done=arr.filter(i=>a.ans[i.code]).length, ngc=arr.filter(i=>a.ans[i.code]==='ng').length, pts=arr.reduce((s,i)=>s+i.pts,0);
+  html+=`<details class="sec" ${first?'open':''} data-cat="${esc(cat)}"><summary><b>${esc(cat)}</b>${ngc?`<span class="risk 高">${ngc} 不符合</span>`:''}<span class="pts">${done}/${arr.length}・${pts}分</span>${ic('chev','s chev')}</summary><div class="body">`;
+  first=false;
+  for(const i of arr){
+   const v=a.ans[i.code], err=a.tried&&!v;
+   html+=`<div class="item ${v==='ng'?'bad':''} ${err?'err':''}" id="it-${i.code}"><div class="item-head"><span class="code">${i.code.replace('H015-','')}</span><p>${esc(i.text)}</p><span class="pts">${i.pts} 分</span></div>
+    ${i.other?`<div class="field"><label for="o-${i.code}">其他項目內容（未使用時維持不適用）</label><input type="text" id="o-${i.code}" data-other="${i.code}" value="${esc(a.other[i.code]||'')}" placeholder="查核人自行填寫"></div>`:''}
+    <div class="seg" role="group" aria-label="${esc(i.text)}">
+     <button class="ok" aria-pressed="${v==='ok'}" data-act="aans" data-code="${i.code}" data-v="ok">符合</button>
+     <button class="ng" aria-pressed="${v==='ng'}" data-act="aans" data-code="${i.code}" data-v="ng">不符合</button>
+     <button class="na" aria-pressed="${v==='na'}" data-act="aans" data-code="${i.code}" data-v="na">不適用</button></div>
+    ${v==='ng'?`<div class="small muted">風險等級 <span class="risk ${i.risk}">${i.risk}</span>・改善期限 ${RISK_DAYS[i.risk]} 天</div>`:''}
+    ${i.law?`<div class="law">${esc(i.law)}</div>`:''}</div>`;
+  }
+  html+=`</div></details>`;
+ }
+ html+=`<div class="dock"><div class="row between"><div class="score"><b>${sc.score==null?'—':sc.score.toFixed(1)}</b><span class="muted small">分</span></div>
+  <div class="counts"><span>符合 <b>${sc.cntOk}</b></span><span>不符合 <b style="color:var(--bad)">${sc.ng}</b></span><span>不適用 <b>${sc.cntNa}</b></span><span>未填 <b>${sc.todo}</b></span></div></div>
+  <div class="small muted mono">符合 ${sc.pass} ÷ 基準 ${sc.base}（${sc.total} − 不適用 ${sc.na}）× 100</div>
+  <button class="btn primary block" data-act="submitAudit">完成查核</button></div>`;
+ return html;
+}
+
+/* ---------- 異常 ---------- */
+function vIssues(){
+ const scope=S.role==='安保專員'?S.issues:S.issues.filter(i=>i.station===S.station);
+ const F=['未結案','待處理','改善中','待驗證','已結案'];
+ const cnt=f=>scope.filter(i=>f==='未結案'?i.status!=='已結案':i.status===f).length;
+ const list=scope.filter(i=>S.issueFilter==='未結案'?i.status!=='已結案':i.status===S.issueFilter)
+   .sort((x,y)=>(isOver(y)-isOver(x))||(x.due-y.due));
+ return `<h1>異常追蹤</h1>
+ <div class="filters">${F.map(f=>`<button class="chip" aria-pressed="${S.issueFilter===f}" data-act="ifilter" data-f="${f}">${f} <span class="mono">${cnt(f)}</span></button>`).join('')}</div>
+ <div class="stack">${list.length?list.map(i=>`<button class="issue ${isOver(i)?'over':''}" data-act="openIssue" data-id="${i.id}">
+   <span class="t">${esc(i.title)}</span><span class="st ${i.status}">${i.status}</span>
+   <span class="m"><span class="risk ${i.risk}">${i.risk}</span><span class="mono">${i.code}</span><span>${esc(stName(i.station))}</span>
+   <span>${i.status==='已結案'?'結案 '+md(i.closed):'期限 '+md(i.due)}</span>${isOver(i)?'<span class="over-tag">已逾期</span>':''}</span></button>`).join('')
+  :`<div class="panel muted">這個分類目前沒有異常。</div>`}</div>`;
+}
+function vIssueSheet(i){
+ const canMgr=S.role==='站長', canSafe=S.role==='安保專員';
+ let act='';
+ if(canMgr&&i.status==='待處理')act=`<button class="btn primary block" data-act="istart" data-id="${i.id}">開始改善</button>`;
+ if(canMgr&&i.status==='改善中')act=`<div class="field"><label for="fixNote">改善說明（必填）</label><textarea id="fixNote" placeholder="例如：已更換滅火器並重新檢查壓力"></textarea></div>
+   <div class="photo"><label class="btn" for="fixPhoto">${ic('camera','s')}改善後照片</label><input type="file" accept="image/*" capture="environment" id="fixPhoto" data-fixphoto="1">${S.fixPhoto?`<img class="thumb" src="${S.fixPhoto}" alt="改善後照片">`:''}</div>
+   <p class="msg" id="fixMsg" hidden>請填寫改善說明</p>
+   <button class="btn primary block" data-act="ireport" data-id="${i.id}">回報改善完成</button>`;
+ if(canSafe&&i.status==='待驗證')act=`<div class="grid2"><button class="btn danger" data-act="irejectAsk" data-id="${i.id}">退回</button><button class="btn primary" data-act="iclose" data-id="${i.id}">驗證合格，結案</button></div>
+   <div id="rejectBox" hidden class="stack"><div class="field"><label for="rejNote">退回原因（必填）</label><textarea id="rejNote" placeholder="例如：照片看不出已加鎖，請補拍"></textarea></div><p class="msg" id="rejMsg" hidden>請填寫退回原因</p><button class="btn danger block" data-act="ireject" data-id="${i.id}">確認退回</button></div>`;
+ if(!act&&i.status!=='已結案'){
+  const need={待處理:'站長',改善中:'站長',待驗證:'安保專員'}[i.status];
+  act=`<p class="small muted">下一步由<b>${need}</b>處理。可在上方切換示範角色試試看。</p>`;
+ }
+ return `<div class="sheet-head"><h1>${esc(i.title)}</h1><button class="iconbtn" data-act="closeSheet" aria-label="關閉">${ic('x','s')}</button></div>
+ <div class="row" style="flex-wrap:wrap;gap:8px"><span class="st ${i.status}">${i.status}</span><span class="risk ${i.risk}">${i.risk}風險</span><span class="code">${i.code}</span><span class="small muted">${i.src}・${esc(stName(i.station))}</span></div>
+ <div class="panel grid2 small"><div><span class="muted">通報日</span><br><b class="mono">${md(i.created)}</b></div><div><span class="muted">改善期限</span><br><b class="mono ${isOver(i)?'over-tag':''}">${md(i.due)}${isOver(i)?' 已逾期':''}</b></div></div>
+ <div class="grid2"><div class="stack"><span class="small muted">異常照片</span><div class="ph">示意照片</div></div><div class="stack"><span class="small muted">改善後照片</span><div class="ph">${['待驗證','已結案'].includes(i.status)?'示意照片':'尚未上傳'}</div></div></div>
+ <section class="panel"><h2 style="margin-bottom:10px">處置紀錄</h2><ol class="timeline">${i.log.map(l=>`<li><span class="mono">${md(l.t)}</span> <span class="who">${esc(l.who)}</span><br>${esc(l.text)}</li>`).join('')}</ol></section>
+ ${act}`;
+}
+
+/* ---------- 管理 ---------- */
+function vManage(){
+ const T=['站點','人員','檢查項目'];
+ let html=`<h1>管理設定</h1><div class="tabs" role="tablist">${T.map(t=>`<button role="tab" aria-selected="${S.manageTab===t}" data-act="mtab" data-t="${t}">${t}</button>`).join('')}</div>`;
+ if(S.manageTab==='站點'){
+  html+=`<section class="panel">${S.stations.map((s,k)=>`<div class="list-row ${s.on?'':'off'}"><div><b>${esc(s.name)}</b> <span class="mono small muted">${s.code}</span><div class="sub">${s.region}</div></div><button class="switch" role="switch" aria-checked="${s.on}" aria-label="啟用 ${esc(s.name)}" data-act="tog" data-list="stations" data-k="${k}"></button></div>`).join('')}</section>
+  <form class="panel stack" data-form="station"><h2>新增站點</h2>
+   <div class="grid2"><div class="field"><label for="fsCode">站點代碼</label><input type="text" id="fsCode" placeholder="ST007" required></div><div class="field"><label for="fsRegion">區域</label><select id="fsRegion"><option>中區</option><option>南區</option></select></div></div>
+   <div class="field"><label for="fsName">站名</label><input type="text" id="fsName" placeholder="例如：彰化站" required></div>
+   <button class="btn primary">新增站點</button></form>`;
+ }
+ if(S.manageTab==='人員'){
+  html+=`<section class="panel">${S.users.map((u,k)=>`<div class="list-row ${u.on?'':'off'}"><div><b>${esc(u.name)}</b> <span class="small muted">${u.role}</span><div class="sub">${esc(u.email)}・${esc(u.station.startsWith('ST')?stName(u.station):u.station)}</div></div><button class="switch" role="switch" aria-checked="${u.on}" aria-label="啟用 ${esc(u.name)}" data-act="tog" data-list="users" data-k="${k}"></button></div>`).join('')}</section>
+  <form class="panel stack" data-form="user"><h2>新增人員</h2>
+   <div class="field"><label for="fuEmail">Google 帳號 Email</label><input type="email" id="fuEmail" placeholder="name@company.com" required></div>
+   <div class="grid2"><div class="field"><label for="fuName">姓名</label><input type="text" id="fuName" required></div><div class="field"><label for="fuRole">角色</label><select id="fuRole">${ROLES.map(r=>`<option>${r}</option>`).join('')}</select></div></div>
+   <div class="field"><label for="fuSt">所屬站點或區域</label><select id="fuSt">${S.stations.map(s=>`<option value="${s.code}">${esc(s.name)}（${s.code}）</option>`).join('')}<option>中區</option><option>南區</option><option>全部</option></select></div>
+   <button class="btn primary">新增人員</button></form>`;
+ }
+ if(S.manageTab==='檢查項目'){
+  const list=S.items.filter(i=>i.form===S.itemForm);
+  html+=`<div class="tabs" role="tablist">${['自主檢查','SL-H015'].map(t=>`<button role="tab" aria-selected="${S.itemForm===t}" data-act="iform" data-t="${t}">${t==='SL-H015'?'SL-H015 查核表':t}</button>`).join('')}</div>
+  <p class="small muted" style="margin:0">啟用 ${list.filter(i=>i.on).length} / 共 ${list.length} 項。停用的項目不會出現在表單上，舊紀錄仍保留。</p>
+  <section class="panel">${list.map(i=>{const k=S.items.indexOf(i);return `<div class="list-row ${i.on?'':'off'}"><div><span class="code">${i.code}</span> ${esc(i.text)}<div class="sub">${esc(i.freq)}・${esc(i.cat)}・<span class="risk ${i.risk}">${i.risk}</span>${i.pts!=null?'・'+i.pts+' 分':''}</div></div><button class="switch" role="switch" aria-checked="${i.on}" aria-label="啟用 ${i.code}" data-act="tog" data-list="items" data-k="${k}"></button></div>`}).join('')}</section>`;
+  if(S.itemForm==='自主檢查')html+=`<form class="panel stack" data-form="item"><h2>新增自主檢查項目</h2>
+   <div class="grid2"><div class="field"><label for="fiFreq">頻率</label><select id="fiFreq"><option>每日</option><option>每週</option><option>每月</option></select></div><div class="field"><label for="fiRisk">風險等級</label><select id="fiRisk"><option>高</option><option selected>中</option><option>低</option></select></div></div>
+   <div class="field"><label for="fiCat">類別</label><input type="text" id="fiCat" placeholder="例如：緊急應變" required></div>
+   <div class="field"><label for="fiText">檢查內容</label><textarea id="fiText" placeholder="例如：緊急沖淋及洗眼設備可出水" required></textarea></div>
+   <div class="field"><label for="fiLaw">法規依據</label><input type="text" id="fiLaw" placeholder="例如：職業安全衛生設施規則"></div>
+   <button class="btn primary">新增項目</button><p class="small muted" style="margin:0">新增後立刻出現在「自主檢查」對應頻率的表單上。</p></form>`;
+  else html+=`<p class="small muted">SL-H015 項目依公司查核表版本管理；改版時新增一個版本，不直接修改舊項目。</p>`;
+ }
+ return html;
+}
+
+/* ---------- 繪製 ---------- */
+function render(){
+ const r=route();
+ document.getElementById('roles').innerHTML=`<small>示範角色</small>`+ROLES.map(x=>`<button class="chip" aria-pressed="${S.role===x}" data-act="role" data-r="${x}">${x}</button>`).join('');
+ const sel=document.getElementById('stationSel');
+ sel.innerHTML=S.stations.filter(s=>s.on).map(s=>`<option value="${s.code}" ${s.code===S.station?'selected':''}>${esc(s.name)}</option>`).join('');
+ sel.hidden=!['站務人員','站長'].includes(S.role);
+ const u=S.users.find(x=>x.role===S.role);
+ document.getElementById('ctx').textContent=`${u?u.name:''}・${S.role}`;
+ const open=S.issues.filter(i=>i.status!=='已結案'&&(S.role==='安保專員'?i.status==='待驗證':i.station===S.station)).length;
+ document.getElementById('tabbar').innerHTML=Object.entries(TABS).filter(([k,t])=>t.roles.includes(S.role)).map(([k,t])=>`<a href="#${k}" ${k===r?'aria-current="page"':''}>${ic(t.icon)}${t.label}${k==='issues'&&open?`<span class="badge">${open}</span>`:''}</a>`).join('');
+ const V={home:vHome,check:vCheck,audit:vAudit,issues:vIssues,manage:vManage};
+ document.getElementById('view').innerHTML=V[r]();
+ const sh=document.getElementById('sheet');
+ const iss=S.sheet&&S.issues.find(i=>i.id===S.sheet);
+ sh.innerHTML=iss?`<div class="sheet-wrap" data-act="closeSheet"><div class="sheet" role="dialog" aria-modal="true" aria-label="異常詳情">${vIssueSheet(iss)}</div></div>`:'';
+}
+
+/* ---------- 互動 ---------- */
+function newIssue(o){const id='ISS-'+String(++seq).padStart(4,'0');S.issues.unshift(Object.assign({id,created:new Date(TODAY),due:addDays(TODAY,RISK_DAYS[o.risk]),status:'待處理'},o));return id}
+document.addEventListener('click',e=>{
+ const el=e.target.closest('[data-act]'); if(!el)return;
+ if(el.classList.contains('sheet-wrap')&&e.target!==el)return;
+ const d=el.dataset, A=d.act;
+ if(A==='role'){S.role=d.r;S.sheet=null;if(!TABS[route()].roles.includes(S.role))go('home');else render();return}
+ if(A==='startCheck'){S.check={freq:d.freq,ans:{},note:{},photo:{},submitted:null,tried:false};go('check');return}
+ if(A==='freq'){S.check.freq=d.freq;S.check.tried=false;render();return}
+ if(A==='ans'){S.check.ans[d.code]=S.check.ans[d.code]===d.v?undefined:d.v;render();if(d.v==='ng'){const t=document.getElementById('n-'+d.code);t&&t.focus({preventScroll:true})}return}
+ if(A==='submitCheck'){
+  const c=S.check,list=itemsFor('自主檢查',c.freq);
+  const bad=list.filter(i=>!c.ans[i.code]||(c.ans[i.code]==='ng'&&!(c.note[i.code]||'').trim()));
+  if(bad.length){c.tried=true;render();const t=document.getElementById('it-'+bad[0].code);t&&t.scrollIntoView({block:'center',behavior:'smooth'});toastT(`還有 ${bad.length} 項需要完成`);return}
+  const ng=list.filter(i=>c.ans[i.code]==='ng');
+  ng.forEach(i=>newIssue({station:S.station,src:'自主檢查',code:i.code,title:c.note[i.code].trim(),risk:i.risk,log:[{t:new Date(TODAY),who:'王小明（站務人員）',text:`${c.freq}檢查通報異常${c.photo[i.code]?'，附照片 1 張':''}`}]}));
+  c.submitted={freq:c.freq,total:list.length,abn:ng.length,high:ng.some(i=>i.risk==='高')};
+  if(c.freq==='每日'){const s=S.stations.find(x=>x.code===S.station);if(s)s.daily='done'}
+  render();window.scrollTo({top:0});return}
+ if(A==='resetCheck'){S.check={freq:S.check.freq,ans:{},note:{},photo:{},submitted:null,tried:false};render();return}
+ if(A==='aans'){S.audit.ans[d.code]=S.audit.ans[d.code]===d.v?undefined:d.v;const open=[...document.querySelectorAll('details.sec[open]')].map(x=>x.dataset.cat);const y=window.scrollY;render();document.querySelectorAll('details.sec').forEach(x=>x.open=open.includes(x.dataset.cat));window.scrollTo({top:y});return}
+ if(A==='submitAudit'){
+  const sc=auditScore();
+  if(sc.todo){S.audit.tried=true;render();const first=itemsFor('SL-H015').find(i=>!S.audit.ans[i.code]);const det=document.getElementById('it-'+first.code).closest('details');document.querySelectorAll('details.sec').forEach(x=>x.open=x===det);document.getElementById('it-'+first.code).scrollIntoView({block:'center',behavior:'smooth'});toastT(`還有 ${sc.todo} 項未填`);return}
+  const st=document.getElementById('auditStation').value;
+  itemsFor('SL-H015').filter(i=>S.audit.ans[i.code]==='ng').forEach(i=>newIssue({station:st,src:'SL-H015',code:i.code,title:i.other&&S.audit.other[i.code]?S.audit.other[i.code]:i.text.slice(0,40)+(i.text.length>40?'…':''),risk:i.risk,log:[{t:new Date(TODAY),who:'林安保（安保專員）',text:'季查核不符合'}]}));
+  S.audit.submitted=Object.assign({station:st},sc);S.audit.confirmed=false;
+  const s=S.stations.find(x=>x.code===st);if(s&&sc.score!=null)s.audit={date:md(TODAY),score:sc.score};
+  render();window.scrollTo({top:0});return}
+ if(A==='mgrConfirm'){S.audit.confirmed=true;render();toastT('站長已確認查核結果');return}
+ if(A==='resetAudit'){S.audit={ans:{},other:{},submitted:null,confirmed:false,tried:false};S.items.filter(i=>i.form==='SL-H015'&&i.other).forEach(i=>S.audit.ans[i.code]='na');render();return}
+ if(A==='ifilter'){S.issueFilter=d.f;render();return}
+ if(A==='openIssue'){S.sheet=d.id;S.fixPhoto=null;render();return}
+ if(A==='closeSheet'){S.sheet=null;render();return}
+ const iss=d.id&&S.issues.find(i=>i.id===d.id);
+ if(A==='istart'){iss.status='改善中';iss.log.push({t:new Date(TODAY),who:'陳志豪（站長）',text:'開始改善'});render();toastT('已改為改善中');return}
+ if(A==='ireport'){const n=document.getElementById('fixNote').value.trim();if(!n){document.getElementById('fixMsg').hidden=false;return}
+  iss.status='待驗證';iss.log.push({t:new Date(TODAY),who:'陳志豪（站長）',text:n+(S.fixPhoto?'，附改善後照片':'')});render();toastT('已回報，等待安保專員驗證');return}
+ if(A==='irejectAsk'){document.getElementById('rejectBox').hidden=false;document.getElementById('rejNote').focus();return}
+ if(A==='ireject'){const n=document.getElementById('rejNote').value.trim();if(!n){document.getElementById('rejMsg').hidden=false;return}
+  iss.status='改善中';iss.log.push({t:new Date(TODAY),who:'林安保（安保專員）',text:'退回：'+n});render();toastT('已退回站長');return}
+ if(A==='iclose'){iss.status='已結案';iss.closed=new Date(TODAY);iss.log.push({t:new Date(TODAY),who:'林安保（安保專員）',text:'驗證合格，結案'});render();toastT('已結案');return}
+ if(A==='mtab'){S.manageTab=d.t;render();return}
+ if(A==='iform'){S.itemForm=d.t;render();return}
+ if(A==='tog'){const o=S[d.list][+d.k];o.on=!o.on;render();return}
+});
+document.addEventListener('input',e=>{
+ const t=e.target;
+ if(t.dataset.note)S.check.note[t.dataset.note]=t.value;
+ if(t.dataset.other)S.audit.other[t.dataset.other]=t.value;
+});
+document.addEventListener('change',e=>{
+ const t=e.target;
+ if(t.id==='stationSel'){S.station=t.value;S.sheet=null;render();return}
+ const f=t.files&&t.files[0];
+ if(f&&(t.dataset.photo||t.dataset.fixphoto)){const r=new FileReader();r.onload=()=>{if(t.dataset.photo)S.check.photo[t.dataset.photo]=r.result;else S.fixPhoto=r.result;
+   const keep=document.getElementById('fixNote')?.value;render();if(keep!=null){const n=document.getElementById('fixNote');if(n)n.value=keep}};r.readAsDataURL(f)}
+});
+document.addEventListener('submit',e=>{
+ e.preventDefault();const f=e.target.dataset.form,v=id=>document.getElementById(id).value.trim();
+ if(f==='station'){const code=v('fsCode').toUpperCase();if(S.stations.some(s=>s.code===code)){toastT('站點代碼已存在');return}
+  S.stations.push({code,name:v('fsName'),region:v('fsRegion'),on:true,daily:'none',audit:{date:'—',score:0}});toastT('已新增站點 '+v('fsName'))}
+ if(f==='user'){S.users.push({email:v('fuEmail'),name:v('fuName'),role:v('fuRole'),station:v('fuSt'),on:true});toastT('已新增人員 '+v('fuName'))}
+ if(f==='item'){const freq=v('fiFreq'),p={每日:'D',每週:'W',每月:'M'}[freq];
+  const n=S.items.filter(i=>i.code.startsWith('SC-'+p)).length+1;const code=`SC-${p}${String(n).padStart(2,'0')}`;
+  S.items.push({code,form:'自主檢查',freq,cat:v('fiCat'),text:v('fiText'),law:v('fiLaw')||'公司規定',risk:v('fiRisk'),pts:null,on:true});toastT(`已新增 ${code}`)}
+ render();
+});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&S.sheet){S.sheet=null;render()}});
+window.addEventListener('hashchange',()=>{S.sheet=null;render();window.scrollTo({top:0})});
+render();
+</script>
