@@ -19,6 +19,6 @@ http.createServer((req, res) => {
     });
     return;
   }
-  const html = fs.readFileSync(__dirname + '/../src/Index.html', 'utf8').replace('<body>', '<body>' + STUB);
+  const html = G.doGet().getContent().replace('<body>', '<body>' + STUB);
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); res.end(html);
 }).listen(8765, () => console.log('ready'));

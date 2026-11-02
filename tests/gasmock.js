@@ -2,6 +2,7 @@
 const fs = require('fs');
 const vm = require('vm');
 const crypto = require('crypto');
+const SRC = __dirname + '/../src';
 
 function makeEnv(workbookPath, opts = {}) {
   const wb = JSON.parse(fs.readFileSync(workbookPath, 'utf8'));
@@ -57,18 +58,25 @@ function makeEnv(workbookPath, opts = {}) {
     UrlFetchApp: { fetch: (url, o) => { log.fetches.push(url); return { getResponseCode: () => 200, getBlob: () => ({ getBytes: () => Array.from(Buffer.from('PK-fake-xlsx')) }) }; } },
     ScriptApp: { getOAuthToken: () => 'token' },
     Utilities: {
-      formatDate: fmtDate, getUuid: () => crypto.randomUUID(), sleep: () => {},
-      base64Decode: s => Array.from(Buffer.from(s, 'base64')), base64Encode: b => Buffer.from(b).toString('base64'), newBlob: (bytes, mime, name) => ({ bytes, mime, name })
+      Charset: { UTF_8: 'UTF-8' }, formatDate: fmtDate, getUuid: () => crypto.randomUUID(), sleep: () => {},
+      base64Decode: s => Array.from(Buffer.from(s, 'base64')), base64Encode: b => Buffer.from(typeof b === 'string' ? Buffer.from(b, 'utf8') : b).toString('base64'), newBlob: (bytes, mime, name) => ({ bytes, mime, name })
     },
     CacheService: { getScriptCache: () => ({ get: k => cache.has(k) ? cache.get(k) : null, put: (k, v) => cache.set(k, v), remove: k => cache.delete(k) }) },
     LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => (opts.props || { PHOTO_FOLDER_ID: 'root' })[k] || null }) },
     DriveApp: { getFolderById: () => root, getRootFolder: () => root, getFileById: id => ({ moveTo: () => log.moved.push(id), setTrashed: v => log.trashed.push(id) }) },
     MailApp: { getRemainingDailyQuota: () => 100, sendEmail: m => log.mails.push(m) },
-    HtmlService: { createHtmlOutputFromFile: () => ({ setTitle() { return this; }, addMetaTag() { return this; } }) }
+    HtmlService: {
+      createHtmlOutputFromFile: () => ({ setTitle() { return this; }, addMetaTag() { return this; } }),
+      createTemplateFromFile: name => {
+        const raw = fs.readFileSync(SRC + '/' + name + '.html', 'utf8');
+        const t = { getRawContent: () => raw, evaluate: () => {
+          const html = raw.split('<?= appB64 ?>').join(String(t.appB64 || ''));
+          return { getContent: () => html, setTitle() { return this; }, addMetaTag() { return this; } }; } };
+        return t; } }
   };
   vm.createContext(ctx);
-  vm.runInContext(fs.readFileSync(__dirname + '/../src/Code.gs', 'utf8'), ctx, { filename: 'Code.gs' });
+  vm.runInContext(fs.readFileSync(SRC + '/Code.gs', 'utf8'), ctx, { filename: 'Code.gs' });
   return { ctx, sheets, log };
 }
 module.exports = { makeEnv };

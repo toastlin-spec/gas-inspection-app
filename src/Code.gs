@@ -32,7 +32,11 @@ const REQUIRED_HEADERS = {
 /* ============================== 進入點 ============================== */
 
 function doGet() {
-  return HtmlService.createHtmlOutputFromFile('Index')
+  // 畫面程式放在 App.html，以原始內容（getRawContent）讀取並轉 Base64 傳給 Index.html，
+  // 避免 Google 輸出網頁時改動程式內容。
+  const page = HtmlService.createTemplateFromFile('Index');
+  page.appB64 = Utilities.base64Encode(HtmlService.createTemplateFromFile('App').getRawContent(), Utilities.Charset.UTF_8);
+  return page.evaluate()
     .setTitle(getProp_('APP_NAME') || '加油站巡檢')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
 }

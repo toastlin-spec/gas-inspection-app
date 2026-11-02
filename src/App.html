@@ -1,0 +1,445 @@
+/* 加油站巡檢 App — 畫面程式（版本見 Index.html 的 __appVersion）
+ * 這個檔案由 Code.gs 以原始內容讀取後編碼傳給畫面執行，請勿加上 <script> 標籤。 */
+const ICON={
+ home:'<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
+ check:'<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/>',
+ audit:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>',
+ issues:'<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+ manage:'<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>',
+ camera:'<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3"/>',
+ chev:'<path d="m9 18 6-6-6-6"/>', x:'<path d="M18 6 6 18M6 6l12 12"/>', ok:'<path d="M20 6 9 17l-5-5"/>',
+ edit:'<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>'
+};
+const ic=(n,c='')=>`<svg class="i ${c}" viewBox="0 0 24 24" aria-hidden="true">${ICON[n]}</svg>`;
+const ESC_MAP={'&':'&amp;','"':'&quot;',"'":'&#39;'};ESC_MAP[String.fromCharCode(60)]='&lt;';ESC_MAP[String.fromCharCode(62)]='&gt;';
+const esc=s=>Array.from(String(s??''),c=>ESC_MAP[c]||c).join('');
+const stripErr=m=>{m=String(m||'');return m.indexOf('Error:')===0?m.slice(6).trim():m};
+const REGIONS=['北區','中區','南區'];
+const md=ymd=>ymd?`${Number(ymd.slice(5,7))}/${ymd.slice(8,10)}`:'';
+const store={get(k){try{return JSON.parse(sessionStorage.getItem(k))}catch(e){return null}},set(k,v){try{sessionStorage.setItem(k,JSON.stringify(v))}catch(e){}},del(k){try{sessionStorage.removeItem(k)}catch(e){}}};
+const draft={get(k){try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
+
+const S={token:null,sess:null,home:null,
+ login:{step:1,role:null,pw:'',stations:[],officers:[],station:'',name:'',officer:'',err:''},
+ check:{freq:'每日',ans:{},note:{},photo:{},tried:false,result:null},
+ audit:{station:'',ans:{},other:{},note:{},photo:{},tried:false,result:null,openCats:null},auditForm:null,
+ issues:null,issueFilter:'未結案',admin:null,manageTab:'站點',stRegion:'全部',itemForm:'自主檢查',problems:null,sheet:null,busy:0};
+
+const TABS={
+ home:{label:'首頁',icon:'home',roles:['站長','安保專員','系統管理員']},
+ check:{label:'自主檢查',icon:'check',roles:['站長']},
+ audit:{label:'查核',icon:'audit',roles:['安保專員']},
+ issues:{label:'異常',icon:'issues',roles:['站長','安保專員','系統管理員']},
+ manage:{label:'管理',icon:'manage',roles:['系統管理員']}
+};
+
+/* ---------- 與後端溝通 ---------- */
+function api(fn,...args){return new Promise((res,rej)=>{
+ if(!(window.google&&google.script&&google.script.run)){rej(new Error('請從系統管理員提供的網址開啟'));return}
+ const timer=setTimeout(()=>rej(new Error('伺服器沒有回應，請確認網路後重新整理')),45000);
+ google.script.run.withSuccessHandler(v=>{clearTimeout(timer);res(v)}).withFailureHandler(e=>{clearTimeout(timer);rej(e)})[fn](...args)})}
+async function call(fn,...args){
+ setBusy(1);
+ try{return await api(fn,...args)}
+ catch(e){const m=String(e&&e.message||e);
+  if(m.indexOf('SESSION_EXPIRED')>=0){toastT('登入已逾時，請重新登入');resetAll();render()}
+  else toastT(stripErr(m));
+  throw e}
+ finally{setBusy(-1)}}
+function setBusy(d){S.busy=Math.max(0,S.busy+d);document.getElementById('busy').hidden=!S.busy;document.querySelectorAll('[data-busy]').forEach(b=>b.disabled=!!S.busy)}
+function toastT(m){const t=document.getElementById('toast');t.textContent=m;t.hidden=false;clearTimeout(t._h);t._h=setTimeout(()=>t.hidden=true,3000)}
+function resetAll(){S.token=null;S.sess=null;S.home=null;S.issues=null;S.admin=null;S.problems=null;S.sheet=null;
+ S.login={step:1,role:null,pw:'',stations:[],officers:[],station:'',name:'',officer:'',err:''};
+ S.check={freq:'每日',ans:{},note:{},photo:{},tried:false,result:null};store.del('gi_token');store.del('gi_sess')}
+async function loadHome(){S.home=await call('getHome',S.token);S.sess=S.home.session;return S.home}
+
+const route=()=>{let r=(location.hash||'').slice(1);if(!S.sess||!TABS[r]||!TABS[r].roles.includes(S.sess.role))r='home';return r};
+const go=r=>{if(location.hash==='#'+r)onRoute();else location.hash=r};
+async function onRoute(){
+ if(!S.sess){render();return}
+ const r=route();S.sheet=null;
+ if(r!=='check')S.check.result=null;
+ if(r!=='audit')S.audit.result=null;
+ try{
+  if(r==='audit'){S.auditForm=await call('getAuditForm',S.token);if(!S.audit.result){pickAuditStation();loadAuditDraft()}}
+  if(r==='home')await loadHome();
+  if(r==='check'){if(!S.home)await loadHome();if(!S.check.result)loadDraft();}
+  if(r==='issues')S.issues=await call('listIssues',S.token);
+  if(r==='manage')S.admin=await call('adminData',S.token);
+ }catch(e){}
+ render();window.scrollTo({top:0});
+}
+
+/* ---------- 共用 ---------- */
+function groupBy(arr,f){const m=new Map();arr.forEach(x=>{const k=f(x);if(!m.has(k))m.set(k,[]);m.get(k).push(x)});return m}
+function stationOptions(list,sel){return REGIONS.map(r=>{const g=list.filter(s=>s.region===r);return g.length?`<optgroup label="${r}">${g.map(s=>`<option value="${esc(s.code)}" ${s.code===sel?'selected':''}>${esc(s.group)}・${esc(s.name)}</option>`).join('')}</optgroup>`:''}).join('')}
+const mgrName=s=>String(s||'').split('（兼）').join('').split('(兼)').join('').trim();
+function freshAudit(){return{station:'',ans:{},other:{},note:{},photo:{},tried:false,result:null,openCats:null}}
+const auditKey=()=>S.auditForm&&S.audit.station?`gi_audit_${S.audit.station}_${S.auditForm.today}`:'';
+function saveAuditDraft(){const k=auditKey();if(k)draft.set(k,{ans:S.audit.ans,other:S.audit.other,note:S.audit.note})}
+function loadAuditDraft(){const F=S.auditForm,a=S.audit;if(!F)return;const k=auditKey(),d=k&&draft.get(k);
+ const def={};F.items.forEach(i=>{if(i.other)def[i.code]='na'});
+ a.ans=d&&d.ans||def;a.other=d&&d.other||{};a.note=d&&d.note||{};a.photo={};a.tried=false;a.openCats=null}
+function pickAuditStation(){const F=S.auditForm,a=S.audit;if(!F||!F.stations.length)return;
+ if(a.station&&F.stations.some(s=>s.code===a.station))return;
+ const next=F.stations.find(s=>!s.auditedThisQuarter)||F.stations[0];a.station=next.code}
+function auditCalc(){const F=S.auditForm,a=S.audit;let pass=0,total=0,na=0,ok=0,ng=0,nac=0,todo=0;
+ F.items.forEach(i=>{const v=a.ans[i.code],pt=Number(i.pts)||0;total+=pt;if(v==='ok'){pass+=pt;ok++}else if(v==='na'){na+=pt;nac++}else if(v==='ng')ng++;else todo++});
+ const base=total-na;return{pass,total,na,base,ok,ng,nac,todo,score:base>0?Math.round(pass/base*1000)/10:null}}
+function downloadBase64(name,b64){const bin=atob(b64),u=new Uint8Array(bin.length);for(let i=0;i!==bin.length;i++)u[i]=bin.charCodeAt(i);
+ const url=URL.createObjectURL(new Blob([u],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+ const el=document.createElement('a');el.href=url;el.download=name;document.body.appendChild(el);el.click();setTimeout(()=>{URL.revokeObjectURL(url);el.remove()},1500);toastT('已下載 '+name)}
+const fmtScore=v=>v===null||v===undefined||v===''?'—':Number(v).toFixed(1);
+const draftKey=()=>S.home&&S.sess?`gi_draft_${S.sess.station}_${S.check.freq}_${S.home.today}`:'';
+function saveDraft(){const k=draftKey();if(k)draft.set(k,{ans:S.check.ans,note:S.check.note})}
+function loadDraft(){const k=draftKey(),d=k&&draft.get(k);S.check.ans=d&&d.ans||{};S.check.note=d&&d.note||{};S.check.photo={};S.check.tried=false;S.check.result=null}
+
+/* ---------- 登入 ---------- */
+function vLogin(){
+ const L=S.login;let body='';
+ if(L.step===1){
+  body=`<form class="panel stack" data-form="pw"><div class="field"><label for="pw">登入密碼</label><input type="password" id="pw" class="pw" inputmode="numeric" autocomplete="current-password" maxlength="20" placeholder="•••••"></div>
+   ${L.err?`<p class="msg">${esc(L.err)}</p>`:''}<button class="btn primary block" data-busy>下一步</button></form>`;
+ }else if(L.role==='站長'){
+  body=`<form class="panel stack" data-form="mgr"><b>站長登入</b>
+   <div class="field"><label for="lgSt">選擇站點</label><select id="lgSt">${stationOptions(L.stations,L.station)}</select></div>
+   <div class="field"><label for="lgName">填報人姓名</label><input type="text" id="lgName" value="${esc(L.name)}" maxlength="30" required></div>
+   <p class="small muted" style="margin:0">姓名預設為站長，代理人填寫時請改成自己的姓名。</p>
+   ${L.err?`<p class="msg">${esc(L.err)}</p>`:''}
+   <button class="btn primary block" data-busy>進入</button><button type="button" class="btn ghost block" data-act="loginBack">返回</button></form>`;
+ }else if(L.role==='安保專員'){
+  body=`<div class="panel stack"><b>安保專員登入</b><span class="small muted">請選擇你的姓名，只會看到負責區域的站點。</span>
+   <div class="who">${L.officers.map(o=>`<button aria-pressed="${L.officer===o.name}" data-act="pickOfficer" data-n="${esc(o.name)}"><span><b>${esc(o.name)}</b><br><span class="small muted">${esc(o.regions.join('、'))}・${o.count} 站</span></span>${L.officer===o.name?ic('ok','s'):''}</button>`).join('')||'<p class="small muted">尚未設定安保專員，請聯絡系統管理員。</p>'}</div>
+   ${L.err?`<p class="msg">${esc(L.err)}</p>`:''}
+   <button class="btn primary block" data-act="enterOfficer" data-busy>進入</button><button class="btn ghost block" data-act="loginBack">返回</button></div>`;
+ }
+ return `<div class="login"><div class="row"><div class="mark">${ic('audit')}</div><div><h1>加油站巡檢</h1><span class="small muted">山隆通運 油品事業部</span></div></div>${body}<p class="small muted" style="text-align:center;margin:0">畫面版本 ${window.__appVersion}</p></div>`;
+}
+
+/* ---------- 首頁 ---------- */
+function vHome(){
+ const H=S.home,a=S.sess;if(!H)return '';
+ if(a.role!=='站長'){
+  const list=H.stations,done=list.filter(s=>s.daily).length,none=list.length-done;
+  const byGroup=groupBy(list,s=>s.region+'・'+s.group);
+  return `<h1>${a.role==='安保專員'?esc(a.regions.join('、')):'全區'}總覽</h1>
+  <div class="grid2">
+   <a class="panel stat" href="#issues" style="text-decoration:none;color:inherit"><b class="mono">${H.counts.verify}</b><span>件待驗證</span></a>
+   <div class="panel stat ${H.counts.overdue?'alert':''}"><b class="mono">${H.counts.overdue}</b><span>件逾期未改善</span></div>
+  </div>
+  ${H.audit?`<section class="panel stack"><div class="row between"><h2>${esc(H.audit.quarter)}・SL-H015 查核</h2>${a.role==='安保專員'?'<a class="btn sm primary" href="#audit">開始查核</a>':''}</div>
+   <div class="bar"><i style="width:${H.audit.total?Math.round(H.audit.done/H.audit.total*100):0}%"></i></div>
+   <span class="small muted">本季已查核 <b class="mono">${H.audit.done}</b> / ${H.audit.total} 站</span>
+   ${H.audit.recent.length?`<div>${H.audit.recent.map(r=>`<div class="list-row"><div><b>${esc(r.stationName)}</b> <span class="mono small">${fmtScore(r.score)} 分</span><span class="sub">${md(r.date)}・${esc(r.auditor)}・${r.confirmed?'站長已確認':'站長未確認'}${r.ng?'・不符合 '+r.ng+' 項':''}</span></div><button class="btn sm" data-act="exportAudit" data-id="${esc(r.recordId)}" data-busy>Excel</button></div>`).join('')}</div>`:'<p class="small muted" style="margin:0">本季尚無查核紀錄。</p>'}
+  </section>`:''}
+  <section class="panel stack"><div class="row between"><h2>今日每日檢查・${list.length} 站</h2><span class="small muted mono">${md(H.today)}</span></div>
+   <div class="grid2"><div class="mini"><b>${done}</b><span><i class="dot g"></i>已完成</span></div><div class="mini"><b style="color:var(--bad)">${none}</b><span><i class="dot r"></i>尚未送出</span></div></div>
+   <details class="sec" style="border:0" open><summary style="padding:4px 0"><b class="small">依組別查看各站</b>${ic('chev','s chev')}</summary><div style="padding-top:8px">
+   ${[...byGroup].map(([g,arr])=>`<div class="grp-title">${esc(g)}</div>`+arr.slice().sort((x,y)=>x.daily-y.daily).map(s=>`<div class="light"><span class="dot ${s.daily?'g':'r'}"></span><div><b>${esc(s.name)}</b> <span class="small muted">${esc(s.mgr)}</span></div><span class="small ${s.daily?'muted':'over-tag'}">${s.daily?'已完成':'尚未送出'}</span></div>`).join('')).join('')}
+   </div></details></section>`;
+ }
+ const st=H.stations[0]||{};
+ const it=f=>H.items.filter(i=>i.freq===f).length;
+ const todo=(f,doneFlag,doneText,waitText)=>`<button class="todo ${doneFlag?'done':''}" data-act="startCheck" data-freq="${f}"><span class="ic">${ic(doneFlag?'ok':'check')}</span><span class="tx"><b>${f}自主檢查</b><span>${doneFlag?doneText:it(f)+' 項・'+waitText}</span></span>${ic('chev','s')}</button>`;
+ return `<div><h1>${esc(st.name||'')}・${md(H.today)}</h1><span class="small muted">${esc(st.region||'')}${esc(st.group||'')}・填報人 ${esc(a.name)}</span></div>
+ <section class="stack"><h2>待辦</h2>
+  ${todo('每日',st.daily,'今日已送出','今日尚未填寫')}${todo('每週',st.weekly,'本週已送出','本週尚未填寫')}${todo('每月',st.monthly,'本月已送出','本月尚未填寫')}
+ </section>
+ <div class="grid2">
+  <a class="panel stat" href="#issues" style="text-decoration:none;color:inherit"><b class="mono">${H.counts.open}</b><span>件未結案異常</span></a>
+  <div class="panel stat ${H.counts.overdue?'alert':''}"><b class="mono">${H.counts.overdue}</b><span>件已逾期</span></div>
+ </div>`;
+}
+
+/* ---------- 自主檢查 ---------- */
+function vCheck(){
+ const c=S.check,H=S.home,a=S.sess;if(!H)return '';
+ const st=H.stations[0]||{};
+ if(c.result){const R=c.result;
+  return `<div class="panel done-card"><div class="big">${ic('ok')}</div><h1>${R.freq}檢查已送出</h1>
+   <p class="muted">${esc(st.name)}・${md(H.today)}・${R.total} 項・填報人 ${esc(a.name)}</p>
+   <p>${R.abnormal?`發現 <b class="over-tag">${R.abnormal}</b> 項異常，已建立異常追蹤。${R.high?(R.mailed?'高風險項目已寄 Email 通知站長與安保專員。':'高風險項目尚未設定 Email，請電話通知安保專員。'):''}`:'全部正常，沒有異常項目。'}</p>
+   <p class="small muted mono">紀錄編號 ${esc(R.recordId)}</p>
+   <div class="stack" style="margin-top:16px">${R.abnormal?`<a class="btn primary block" href="#issues">查看異常</a>`:''}<a class="btn block" href="#home">回首頁</a></div></div>`}
+ const list=H.items.filter(i=>i.freq===c.freq),answered=list.filter(i=>c.ans[i.code]).length;
+ let html=`<div class="row between"><h1>自主檢查</h1><span class="small muted">${esc(st.name||'')}</span></div>
+ <div class="tabs" role="tablist">${['每日','每週','每月'].map(f=>`<button role="tab" aria-selected="${c.freq===f}" data-act="freq" data-freq="${f}">${f}</button>`).join('')}</div>`;
+ for(const [cat,arr] of groupBy(list,i=>i.cat)){
+  html+=`<div class="cat">${esc(cat)}</div>`;
+  for(const i of arr){
+   const v=c.ans[i.code],err=c.tried&&(!v||(v==='ng'&&!(c.note[i.code]||'').trim()));
+   html+=`<div class="item ${v==='ng'?'bad':''} ${err&&v!=='ng'?'err':''}" id="it-${esc(i.code)}">
+    <div class="item-head"><span class="code">${esc(i.code)}</span><p>${esc(i.text)}${i.std?`<br><span class="small muted">判定標準：${esc(i.std)}</span>`:''}</p><span class="risk ${esc(i.risk)}">${esc(i.risk)}</span></div>
+    <div class="seg" role="group" aria-label="${esc(i.text)}">
+     <button class="ok" aria-pressed="${v==='ok'}" data-act="ans" data-code="${esc(i.code)}" data-v="ok">正常</button>
+     <button class="ng" aria-pressed="${v==='ng'}" data-act="ans" data-code="${esc(i.code)}" data-v="ng">異常</button>
+     <button class="na" aria-pressed="${v==='na'}" data-act="ans" data-code="${esc(i.code)}" data-v="na">不適用</button></div>
+    ${v==='ng'?`<div class="field"><label for="n-${esc(i.code)}">異常說明（必填）</label><textarea id="n-${esc(i.code)}" data-note="${esc(i.code)}" maxlength="500" placeholder="例如：2 號加油島滅火器壓力指針在紅區">${esc(c.note[i.code]||'')}</textarea></div>
+     <div class="photo">${c.photo[i.code]?`<img class="thumb" src="${c.photo[i.code]}" alt="異常照片"><button class="btn sm ghost" data-act="rmPhoto" data-code="${esc(i.code)}">移除</button>`:''}<label class="btn" for="p-${esc(i.code)}">${ic('camera','s')}${c.photo[i.code]?'重拍':'拍照'}</label><input type="file" accept="image/*" capture="environment" id="p-${esc(i.code)}" data-photo="${esc(i.code)}"><span class="small muted">${i.risk==='高'?'高風險：送出後立即通知':'改善期限 '+(H.riskDays[i.risk]||7)+' 天'}</span></div>
+     ${err?'<p class="msg">請填寫異常說明</p>':''}`:''}
+    ${err&&!v?'<p class="msg" style="color:var(--warn)">此項尚未選擇</p>':''}
+    ${i.law?`<div class="law">依據：${esc(i.law)}</div>`:''}</div>`;
+  }
+ }
+ if(!list.length)html+=`<div class="panel muted">此頻率目前沒有啟用的檢查項目。</div>`;
+ const abn=list.filter(i=>c.ans[i.code]==='ng').length;
+ html+=`<div class="dock"><div class="row between small"><span>已完成 <b class="mono">${answered}</b> / <span class="mono">${list.length}</span></span><span class="${abn?'over-tag':'muted'}">異常 <span class="mono">${abn}</span> 項</span></div>
+  <div class="bar"><i style="width:${list.length?answered/list.length*100:0}%"></i></div>
+  <button class="btn primary block" data-act="submitCheck" data-busy ${list.length?'':'disabled'}>送出${c.freq}檢查</button></div>`;
+ return html;
+}
+
+/* ---------- SL-H015 季查核 ---------- */
+function vAudit(){
+ const F=S.auditForm,a=S.audit;if(!F)return '';
+ if(a.result)return vAuditDone();
+ if(!F.stations.length)return '<h1>SL-H015 季查核</h1><div class="panel muted">負責區域內沒有啟用中的站點。</div>';
+ const st=F.stations.find(x=>x.code===a.station)||{},sc=auditCalc();
+ const opts=REGIONS.map(r=>{const g=F.stations.filter(x=>x.region===r);return g.length?`<optgroup label="${r}">${g.map(x=>`<option value="${esc(x.code)}" ${x.code===a.station?'selected':''}>${esc(x.group)}・${esc(x.name)}${x.auditedThisQuarter?'（本季已查）':''}</option>`).join('')}</optgroup>`:''}).join('');
+ let html=`<div class="row between"><h1>SL-H015 季查核</h1>${F.version?`<span class="code">${esc(F.version)} 版</span>`:''}</div>
+ <div class="field"><label for="auditSt">受查站點・${esc(F.quarter)}</label><select id="auditSt">${opts}</select></div>
+ <p class="small muted" style="margin:-6px 0 0">站長 ${esc(st.mgr||'')}${st.lastAudit?`・上次查核 ${md(st.lastAudit.date)}（${fmtScore(st.lastAudit.score)} 分）`:'・尚無查核紀錄'}</p>`;
+ let first=true;
+ for(const [cat,arr] of groupBy(F.items,i=>i.cat)){
+  const done=arr.filter(i=>a.ans[i.code]).length,ngc=arr.filter(i=>a.ans[i.code]==='ng').length,pts=arr.reduce((t,i)=>t+(Number(i.pts)||0),0);
+  const open=a.openCats?a.openCats.includes(cat):first;first=false;
+  html+=`<details class="sec" ${open?'open':''} data-cat="${esc(cat)}"><summary><b>${esc(cat)}</b>${ngc?`<span class="risk 高">${ngc} 不符合</span>`:''}<span class="pts">${done}/${arr.length}・${pts}分</span>${ic('chev','s chev')}</summary><div class="body">`;
+  for(const i of arr){
+   const v=a.ans[i.code],needOther=i.other&&v&&v!=='na'&&!(a.other[i.code]||'').trim(),err=a.tried&&(!v||needOther);
+   html+=`<div class="item ${v==='ng'?'bad':''} ${err?'err':''}" id="it-${esc(i.code)}"><div class="item-head"><span class="code">${esc(i.code.replace('H015-',''))}</span><p>${esc(i.text)}</p><span class="pts">${i.pts} 分</span></div>
+    ${i.other?`<div class="field"><label for="o-${esc(i.code)}">其他項目內容（沒有就維持不適用）</label><input type="text" id="o-${esc(i.code)}" data-aother="${esc(i.code)}" value="${esc(a.other[i.code]||'')}" maxlength="100" placeholder="查核人自行填寫"></div>`:''}
+    <div class="seg" role="group" aria-label="${esc(i.text)}">
+     <button class="ok" aria-pressed="${v==='ok'}" data-act="aans" data-code="${esc(i.code)}" data-v="ok">符合</button>
+     <button class="ng" aria-pressed="${v==='ng'}" data-act="aans" data-code="${esc(i.code)}" data-v="ng">不符合</button>
+     <button class="na" aria-pressed="${v==='na'}" data-act="aans" data-code="${esc(i.code)}" data-v="na">不適用</button></div>
+    ${v==='ng'?`<div class="field"><label for="an-${esc(i.code)}">不符合說明（會成為異常內容）</label><textarea id="an-${esc(i.code)}" data-anote="${esc(i.code)}" maxlength="500" placeholder="例如：95 無鉛卸油口未上鎖">${esc(a.note[i.code]||'')}</textarea></div>
+     <div class="photo">${a.photo[i.code]?`<img class="thumb" src="${a.photo[i.code]}" alt="不符合照片"><button class="btn sm ghost" data-act="rmAPhoto" data-code="${esc(i.code)}">移除</button>`:''}<label class="btn" for="ap-${esc(i.code)}">${ic('camera','s')}${a.photo[i.code]?'重拍':'拍照'}</label><input type="file" accept="image/*" capture="environment" id="ap-${esc(i.code)}" data-aphoto="${esc(i.code)}"><span class="small muted">風險 <span class="risk ${esc(i.risk)}">${esc(i.risk)}</span>・改善期限 ${F.riskDays[i.risk]||7} 天</span></div>`:''}
+    ${err?`<p class="msg" style="color:var(--warn)">${v?'請填寫其他項目內容':'此項尚未選擇'}</p>`:''}
+    ${i.law?`<div class="law">${esc(i.law)}</div>`:''}</div>`;
+  }
+  html+='</div></details>';
+ }
+ html+=`<div class="dock"><div class="row between"><div class="score"><b>${fmtScore(sc.score)}</b><span class="muted small">分</span></div>
+  <div class="counts"><span>符合 <b>${sc.ok}</b></span><span>不符合 <b style="color:var(--bad)">${sc.ng}</b></span><span>不適用 <b>${sc.nac}</b></span><span>未填 <b>${sc.todo}</b></span></div></div>
+  <div class="small muted mono">符合 ${sc.pass} ÷ 基準 ${sc.base}（${sc.total} − 不適用 ${sc.na}）× 100</div>
+  <button class="btn primary block" data-act="submitAudit" data-busy>完成查核</button></div>`;
+ return html;
+}
+function vAuditDone(){
+ const R=S.audit.result;
+ return `<div class="panel done-card"><div class="big">${ic('audit')}</div><h1>${esc(R.station.name)} 查核完成</h1>
+ <div class="score" style="justify-content:center;margin:8px 0"><b>${fmtScore(R.score)}</b><span class="muted">分</span></div>
+ <p class="muted small mono">符合 ${R.pass} ÷ 基準 ${R.base}（${R.total} − 不適用 ${R.na}）× 100</p>
+ <p>${R.ngCount?`不符合 <b class="over-tag">${R.ngCount}</b> 項，已建立異常追蹤。${R.high?(R.mailed?'高風險項目已寄 Email 通知。':'高風險項目尚未設定 Email，請另行通知站長。'):''}`:'全部符合。'}</p>
+ ${R.confirmedBy?`<p class="small" style="color:var(--accent)">${ic('ok','s')} 站長 ${esc(R.confirmedBy)} 已確認查核結果</p>`:
+ `<form class="panel stack" data-form="confirm" style="background:var(--warn-soft);border-color:var(--warn);text-align:left;margin-top:12px"><b>請站長確認查核結果</b><span class="small">請站長在這支手機上確認姓名後按下確認，取代紙本簽名。</span>
+  <div class="field"><label for="cfName">站長姓名</label><input type="text" id="cfName" value="${esc(mgrName(R.station.mgr))}" maxlength="30" required></div><button class="btn block" data-busy>站長確認查核結果</button></form>`}
+ <div class="stack" style="margin-top:16px"><button class="btn primary block" data-act="exportAudit" data-id="${esc(R.recordId)}" data-busy>下載 Excel 查核表</button><a class="btn block" href="#issues">查看異常</a><button class="btn block ghost" data-act="newAudit" data-busy>開始下一站查核</button></div></div>`;
+}
+
+/* ---------- 異常（第一階段唯讀） ---------- */
+function vIssues(){
+ const all=S.issues||[],F=['未結案','待處理','改善中','待驗證','已結案'];
+ const cnt=f=>all.filter(i=>f==='未結案'?i.status!=='已結案':i.status===f).length;
+ const list=all.filter(i=>S.issueFilter==='未結案'?i.status!=='已結案':i.status===S.issueFilter).sort((x,y)=>(y.overdue-x.overdue)||String(x.due).localeCompare(String(y.due)));
+ return `<h1>異常追蹤</h1>
+ <div class="filters">${F.map(f=>`<button class="chip" aria-pressed="${S.issueFilter===f}" data-act="ifilter" data-f="${f}">${f} <span class="mono">${cnt(f)}</span></button>`).join('')}</div>
+ <div class="stack">${list.length?list.map(i=>`<button class="issue ${i.overdue?'over':''}" data-act="openIssue" data-id="${esc(i.id)}">
+   <span class="t">${esc(i.title)}</span><span class="st ${esc(i.status)}">${esc(i.status)}</span>
+   <span class="m"><span class="risk ${esc(i.risk)}">${esc(i.risk)}</span><span class="mono">${esc(i.code)}</span><span>${esc(i.stationName)}</span>
+   <span>${i.status==='已結案'?'結案 '+md(i.closed):'期限 '+md(i.due)}</span>${i.overdue?'<span class="over-tag">已逾期</span>':''}</span></button>`).join('')
+  :`<div class="panel muted">這個分類目前沒有異常。</div>`}</div>
+ <p class="small muted" style="margin:0">異常的改善回報、驗證與結案在第二階段開放。</p>`;
+}
+function vIssueSheet(i){
+ return `<div class="sheet-head"><h1>${esc(i.title)}</h1><button class="iconbtn" data-act="closeSheet" aria-label="關閉">${ic('x','s')}</button></div>
+ <div class="row" style="flex-wrap:wrap;gap:8px"><span class="st ${esc(i.status)}">${esc(i.status)}</span><span class="risk ${esc(i.risk)}">${esc(i.risk)}風險</span><span class="code">${esc(i.code)}</span><span class="small muted">${esc(i.src)}・${esc(i.stationName)}</span></div>
+ <div class="panel grid2 small"><div><span class="muted">通報日</span><br><b class="mono">${md(i.created)}</b></div><div><span class="muted">改善期限</span><br><b class="mono ${i.overdue?'over-tag':''}">${md(i.due)}${i.overdue?' 已逾期':''}</b></div></div>
+ ${i.photo?`<a class="btn block" href="${esc(i.photo)}" target="_blank" rel="noopener">${ic('camera','s')}開啟異常照片</a>`:''}
+ <section class="panel"><h2 style="margin-bottom:10px">處置紀錄</h2><ol class="timeline">${(i.log||[]).map(l=>`<li><span class="mono">${esc(String(l.t||'').slice(5,16))}</span> <span class="who">${esc(l.who)}</span><br>${esc(l.text)}</li>`).join('')}</ol></section>
+ <p class="small muted" style="margin:0">異常 ${esc(i.id)}・改善回報與結案將在第二階段開放。</p>`;
+}
+
+/* ---------- 管理設定 ---------- */
+function vManage(){
+ const A=S.admin;if(!A)return '';
+ const T=['站點','安保專員','檢查項目','資料檢查'];
+ let html=`<h1>管理設定</h1><div class="tabs" role="tablist">${T.map(t=>`<button role="tab" aria-selected="${S.manageTab===t}" data-act="mtab" data-t="${t}">${t}</button>`).join('')}</div>`;
+ if(S.manageTab==='站點'){
+  const list=A.stations.filter(s=>S.stRegion==='全部'||s.region===S.stRegion);
+  html+=`<div class="row between"><div class="filters">${['全部',...REGIONS].map(r=>`<button class="chip" aria-pressed="${S.stRegion===r}" data-act="streg" data-r="${r}">${r} <span class="mono">${r==='全部'?A.stations.length:A.stations.filter(s=>s.region===r).length}</span></button>`).join('')}</div></div>
+  <button class="btn primary block" data-act="editStation" data-code="">新增站點</button>
+  <section class="panel">${[...groupBy(list,s=>s.region+'・'+s.group)].map(([g,arr])=>`<div class="grp-title">${esc(g)}</div>`+arr.map(s=>`<div class="list-row ${s.on?'':'off'}"><button class="rowbtn" data-act="editStation" data-code="${esc(s.code)}"><b>${esc(s.name)}</b> <span class="mono small muted">${esc(s.code)}</span><span class="sub">站長 ${esc(s.mgr)}${s.email?'':'・未填 Email'}</span></button><button class="switch" role="switch" aria-checked="${s.on}" aria-label="啟用 ${esc(s.name)}" data-act="tog" data-kind="stations" data-key="${esc(s.code)}" data-busy></button></div>`).join('')).join('')||'<p class="muted">沒有站點</p>'}</section>`;
+ }
+ if(S.manageTab==='安保專員'){
+  html+=`<p class="small muted" style="margin:0">安保專員決定各區的待驗證異常與通知寄給誰。站長、會計不建個人資料；登入密碼在試算表「設定」工作表修改。</p>
+  <button class="btn primary block" data-act="editOfficer" data-name="">新增安保專員</button>
+  <section class="panel">${A.officers.map(o=>`<div class="list-row ${o.on?'':'off'}"><button class="rowbtn" data-act="editOfficer" data-name="${esc(o.name)}"><b>${esc(o.name)}</b><span class="sub">${esc(o.regions.join('、'))}・${o.email?esc(o.email):'未填 Email'}</span></button><button class="switch" role="switch" aria-checked="${o.on}" aria-label="啟用 ${esc(o.name)}" data-act="tog" data-kind="officers" data-key="${esc(o.name)}" data-busy></button></div>`).join('')||'<p class="muted">尚未建立安保專員</p>'}</section>`;
+ }
+ if(S.manageTab==='檢查項目'){
+  const forms=[['自主檢查','自主檢查'],['SL-H015查核表','SL-H015 查核表']];
+  const list=A.items.filter(i=>i.form===S.itemForm);
+  html+=`<div class="tabs" role="tablist">${forms.map(([k,l])=>`<button role="tab" aria-selected="${S.itemForm===k}" data-act="iform" data-t="${k}">${l}</button>`).join('')}</div>
+  <p class="small muted" style="margin:0">啟用 ${list.filter(i=>i.on).length} / 共 ${list.length} 項。停用的項目不會出現在表單上，舊紀錄仍保留。</p>
+  ${S.itemForm==='自主檢查'?`<button class="btn primary block" data-act="editItem" data-code="">新增自主檢查項目</button>`:''}
+  <section class="panel">${list.map(i=>`<div class="list-row ${i.on?'':'off'}">${S.itemForm==='自主檢查'?`<button class="rowbtn" data-act="editItem" data-code="${esc(i.code)}">`:'<div>'}<span class="code">${esc(i.code)}</span> ${esc(i.text)}<span class="sub">${esc(i.freq)}・${esc(i.cat)}・<span class="risk ${esc(i.risk)}">${esc(i.risk)}</span>${i.pts!=null?'・'+i.pts+' 分':''}</span>${S.itemForm==='自主檢查'?'</button>':'</div>'}<button class="switch" role="switch" aria-checked="${i.on}" aria-label="啟用 ${esc(i.code)}" data-act="tog" data-kind="items" data-key="${esc(i.code)}" data-busy></button></div>`).join('')}</section>
+  ${S.itemForm!=='自主檢查'?'<p class="small muted">SL-H015 項目依公司查核表版本管理，改版時在試算表新增版本，不直接修改舊項目。</p>':''}`;
+ }
+ if(S.manageTab==='資料檢查'){
+  const P=S.problems;
+  html+=`<p class="small muted" style="margin:0">檢查站點代碼重複、Email 格式、各區是否有安保專員、登入密碼等設定。直接編輯試算表後建議執行一次。</p>
+  <button class="btn primary block" data-act="checkData" data-busy>開始檢查</button>
+  ${P?(P.length?`<section class="panel">${P.map(p=>`<div class="list-row"><div><span class="risk ${p.level==='錯誤'?'高':'中'}">${esc(p.level)}</span> <b>${esc(p.sheet)}</b><span class="sub">${esc(p.msg)}</span></div></div>`).join('')}</section>`:`<div class="panel" style="color:var(--accent)">${ic('ok','s')} 沒有發現問題</div>`):''}`;
+ }
+ return html;
+}
+function vEditSheet(sh){
+ const A=S.admin;
+ if(sh.type==='station'){const s=A.stations.find(x=>x.code===sh.key)||{region:S.stRegion==='全部'?'中區':S.stRegion};
+  return `<div class="sheet-head"><h1>${s.code?'編輯站點 '+esc(s.code):'新增站點'}</h1><button class="iconbtn" data-act="closeSheet" aria-label="關閉">${ic('x','s')}</button></div>
+  <form class="stack" data-form="station"><input type="hidden" id="fsCode" value="${esc(s.code||'')}">
+   <div class="grid2"><div class="field"><label for="fsRegion">區域</label><select id="fsRegion">${REGIONS.map(r=>`<option ${r===s.region?'selected':''}>${r}</option>`).join('')}</select></div><div class="field"><label for="fsGroup">組別</label><input type="text" id="fsGroup" value="${esc(s.group||'')}" placeholder="例如：中二組" maxlength="20"></div></div>
+   <div class="grid2"><div class="field"><label for="fsName">站名</label><input type="text" id="fsName" value="${esc(s.name||'')}" maxlength="20" required></div><div class="field"><label for="fsMgr">站長</label><input type="text" id="fsMgr" value="${esc(s.mgr||'')}" maxlength="30" required></div></div>
+   <div class="field"><label for="fsEmail">站長 Email（高風險異常通知用，可之後再填）</label><input type="email" id="fsEmail" value="${esc(s.email||'')}" maxlength="100"></div>
+   <button class="btn primary block" data-busy>儲存</button></form>`}
+ if(sh.type==='officer'){const o=A.officers.find(x=>x.name===sh.key)||{regions:[]};
+  return `<div class="sheet-head"><h1>${o.name?'編輯安保專員':'新增安保專員'}</h1><button class="iconbtn" data-act="closeSheet" aria-label="關閉">${ic('x','s')}</button></div>
+  <form class="stack" data-form="officer"><input type="hidden" id="foOrig" value="${esc(o.name||'')}">
+   <div class="field"><label for="foName">姓名</label><input type="text" id="foName" value="${esc(o.name||'')}" maxlength="30" required></div>
+   <div class="field"><span class="small muted">負責區域</span><div class="row" style="flex-wrap:wrap">${REGIONS.map(r=>`<label class="chk"><input type="checkbox" name="foReg" value="${r}" ${o.regions.includes(r)?'checked':''}> ${r}</label>`).join('')}</div></div>
+   <div class="field"><label for="foEmail">Email（可之後再填）</label><input type="email" id="foEmail" value="${esc(o.email||'')}" maxlength="100"></div>
+   <button class="btn primary block" data-busy>儲存</button></form>`}
+ if(sh.type==='item'){const i=A.items.find(x=>x.code===sh.key)||{freq:'每日',risk:'中'};
+  return `<div class="sheet-head"><h1>${i.code?'編輯 '+esc(i.code):'新增自主檢查項目'}</h1><button class="iconbtn" data-act="closeSheet" aria-label="關閉">${ic('x','s')}</button></div>
+  <form class="stack" data-form="item"><input type="hidden" id="fiCode" value="${esc(i.code||'')}">
+   <div class="grid2"><div class="field"><label for="fiFreq">頻率</label><select id="fiFreq" ${i.code?'disabled':''}>${['每日','每週','每月'].map(f=>`<option ${f===i.freq?'selected':''}>${f}</option>`).join('')}</select></div><div class="field"><label for="fiRisk">風險等級</label><select id="fiRisk">${['高','中','低'].map(r=>`<option ${r===i.risk?'selected':''}>${r}</option>`).join('')}</select></div></div>
+   <div class="field"><label for="fiCat">類別</label><input type="text" id="fiCat" value="${esc(i.cat||'')}" placeholder="例如：緊急應變" maxlength="20" required></div>
+   <div class="field"><label for="fiText">檢查內容</label><textarea id="fiText" maxlength="200" required>${esc(i.text||'')}</textarea></div>
+   <div class="field"><label for="fiStd">判定標準（選填）</label><input type="text" id="fiStd" value="${esc(i.std||'')}" maxlength="100"></div>
+   <div class="field"><label for="fiLaw">法規依據</label><input type="text" id="fiLaw" value="${esc(i.law||'')}" maxlength="100" placeholder="例如：職業安全衛生設施規則"></div>
+   ${i.code?'<p class="small muted" style="margin:0">頻率建立後不能修改；要換頻率請停用這項，再新增一項。</p>':''}
+   <button class="btn primary block" data-busy>儲存</button></form>`}
+ return '';
+}
+
+/* ---------- 繪製 ---------- */
+function render(){
+ const a=S.sess;
+ document.getElementById('app').classList.toggle('nologin',!a);
+ document.getElementById('topbar').hidden=!a;document.getElementById('tabnav').hidden=!a;
+ if(!a){document.getElementById('view').innerHTML=vLogin();document.getElementById('sheet').innerHTML='';const pw=document.getElementById('pw');pw&&pw.focus();return}
+ const r=route();
+ document.getElementById('ctx').textContent=a.role==='站長'?`${(S.home&&S.home.stations[0]||{}).name||''}・${a.name}`:a.role==='安保專員'?`${a.name}・安保專員（${a.regions.join('、')}）`:'系統管理員';
+ const badge=S.home?(a.role==='安保專員'?S.home.counts.verify:S.home.counts.open):0;
+ document.getElementById('tabbar').innerHTML=Object.entries(TABS).filter(([k,t])=>t.roles.includes(a.role)).map(([k,t])=>`<a href="#${k}" ${k===r?'aria-current="page"':''}>${ic(t.icon)}${t.label}${k==='issues'&&badge?`<span class="badge">${badge}</span>`:''}</a>`).join('');
+ const V={home:vHome,check:vCheck,audit:vAudit,issues:vIssues,manage:vManage};
+ document.getElementById('view').innerHTML=V[r]();
+ let sheet='';
+ if(S.sheet&&S.sheet.type==='issue'){const i=(S.issues||[]).find(x=>x.id===S.sheet.key);if(i)sheet=vIssueSheet(i)}
+ else if(S.sheet)sheet=vEditSheet(S.sheet);
+ document.getElementById('sheet').innerHTML=sheet?`<div class="sheet-wrap" data-act="closeSheet"><div class="sheet" role="dialog" aria-modal="true">${sheet}</div></div>`:'';
+ setBusy(0);
+}
+
+/* ---------- 照片壓縮：長邊 1280 像素、JPEG ---------- */
+function compress(file){return new Promise((res,rej)=>{const url=URL.createObjectURL(file),img=new Image();
+ img.onload=()=>{const max=1280,k=Math.min(1,max/Math.max(img.naturalWidth,img.naturalHeight));const c=document.createElement('canvas');c.width=Math.round(img.naturalWidth*k);c.height=Math.round(img.naturalHeight*k);c.getContext('2d').drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(url);res(c.toDataURL('image/jpeg',0.72))};
+ img.onerror=()=>{URL.revokeObjectURL(url);rej(new Error('無法讀取這張照片，請重新拍攝'))};img.src=url})}
+
+/* ---------- 互動 ---------- */
+document.addEventListener('click',async e=>{
+ const el=e.target.closest('[data-act]');if(!el||el.disabled)return;
+ if(el.classList.contains('sheet-wrap')&&e.target!==el)return;
+ const d=el.dataset,A=d.act;
+ try{
+ if(A==='logout'){const t=S.token;resetAll();history.replaceState(null,'',location.pathname+location.search);render();if(t)api('logout',t).catch(()=>{});return}
+ if(A==='loginBack'){S.login={step:1,role:null,pw:'',stations:[],officers:[],station:'',name:'',officer:'',err:''};render();return}
+ if(A==='pickOfficer'){S.login.officer=d.n;S.login.err='';render();return}
+ if(A==='enterOfficer'){if(!S.login.officer){S.login.err='請先選擇你的姓名';render();return}await doLogin({pw:S.login.pw,officer:S.login.officer});return}
+ if(A==='startCheck'){S.check.freq=d.freq;loadDraft();go('check');return}
+ if(A==='freq'){S.check.freq=d.freq;loadDraft();render();return}
+ if(A==='ans'){S.check.ans[d.code]=S.check.ans[d.code]===d.v?undefined:d.v;if(S.check.ans[d.code]!=='ng')delete S.check.photo[d.code];saveDraft();render();if(d.v==='ng'){const t=document.getElementById('n-'+d.code);t&&t.focus({preventScroll:true})}return}
+ if(A==='rmPhoto'){delete S.check.photo[d.code];render();return}
+ if(A==='submitCheck'){
+  const c=S.check,list=S.home.items.filter(i=>i.freq===c.freq);
+  const bad=list.filter(i=>!c.ans[i.code]||(c.ans[i.code]==='ng'&&!(c.note[i.code]||'').trim()));
+  if(bad.length){c.tried=true;render();const t=document.getElementById('it-'+bad[0].code);t&&t.scrollIntoView({block:'center',behavior:'smooth'});toastT(`還有 ${bad.length} 項需要完成`);return}
+  const answers=list.map(i=>({code:i.code,result:c.ans[i.code],note:c.ans[i.code]==='ng'?c.note[i.code]:'',photo:c.ans[i.code]==='ng'?(c.photo[i.code]||''):''}));
+  const R=await call('submitCheck',S.token,{freq:c.freq,answers});
+  draft.del(draftKey());c.result=R;c.ans={};c.note={};c.photo={};c.tried=false;
+  try{await loadHome()}catch(_){}
+  render();window.scrollTo({top:0});return}
+ if(A==='aans'){const a=S.audit;a.ans[d.code]=a.ans[d.code]===d.v?undefined:d.v;if(a.ans[d.code]!=='ng')delete a.photo[d.code];
+  a.openCats=[...document.querySelectorAll('details.sec[open]')].map(x=>x.dataset.cat);saveAuditDraft();const y=window.scrollY;render();window.scrollTo({top:y});
+  if(d.v==='ng'&&a.ans[d.code]==='ng'){const t=document.getElementById('an-'+d.code);t&&t.focus({preventScroll:true})}return}
+ if(A==='rmAPhoto'){delete S.audit.photo[d.code];const y=window.scrollY;S.audit.openCats=[...document.querySelectorAll('details.sec[open]')].map(x=>x.dataset.cat);render();window.scrollTo({top:y});return}
+ if(A==='submitAudit'){
+  const F=S.auditForm,a=S.audit;
+  const bad=F.items.filter(i=>!a.ans[i.code]||(i.other&&a.ans[i.code]!=='na'&&!(a.other[i.code]||'').trim()));
+  if(bad.length){a.tried=true;a.openCats=[bad[0].cat];render();const t=document.getElementById('it-'+bad[0].code);t&&t.scrollIntoView({block:'center',behavior:'smooth'});toastT(`還有 ${bad.length} 項需要完成`);return}
+  const answers=F.items.map(i=>({code:i.code,result:a.ans[i.code],note:a.ans[i.code]==='ng'?(a.note[i.code]||''):'',other:i.other?(a.other[i.code]||''):'',photo:a.ans[i.code]==='ng'?(a.photo[i.code]||''):''}));
+  const R=await call('submitAudit',S.token,{station:a.station,answers});
+  draft.del(auditKey());a.result=Object.assign(R,{confirmedBy:''});render();window.scrollTo({top:0});return}
+ if(A==='newAudit'){const prev=S.audit.result&&S.audit.result.station.code;S.audit=freshAudit();S.auditForm=await call('getAuditForm',S.token);
+  const next=S.auditForm.stations.find(x=>!x.auditedThisQuarter&&x.code!==prev)||S.auditForm.stations[0];S.audit.station=next?next.code:'';loadAuditDraft();render();window.scrollTo({top:0});return}
+ if(A==='exportAudit'){const r=await call('exportAudit',S.token,d.id);downloadBase64(r.filename,r.data);return}
+ if(A==='ifilter'){S.issueFilter=d.f;render();return}
+ if(A==='openIssue'){S.sheet={type:'issue',key:d.id};render();return}
+ if(A==='closeSheet'){S.sheet=null;render();return}
+ if(A==='mtab'){S.manageTab=d.t;render();return}
+ if(A==='streg'){S.stRegion=d.r;render();return}
+ if(A==='iform'){S.itemForm=d.t;render();return}
+ if(A==='editStation'){S.sheet={type:'station',key:d.code};render();return}
+ if(A==='editOfficer'){S.sheet={type:'officer',key:d.name};render();return}
+ if(A==='editItem'){S.sheet={type:'item',key:d.code};render();return}
+ if(A==='tog'){await call('adminToggle',S.token,d.kind,d.key);S.admin=await call('adminData',S.token);render();return}
+ if(A==='checkData'){S.problems=await call('adminCheckData',S.token);render();return}
+ }catch(err){render()}
+});
+document.addEventListener('input',e=>{const t=e.target;
+ if(t.dataset.note){S.check.note[t.dataset.note]=t.value;saveDraft()}
+ if(t.id==='lgName')S.login.name=t.value;
+ if(t.dataset.aother){S.audit.other[t.dataset.aother]=t.value;saveAuditDraft()}
+ if(t.dataset.anote){S.audit.note[t.dataset.anote]=t.value;saveAuditDraft()}});
+document.addEventListener('change',async e=>{const t=e.target;
+ if(t.id==='lgSt'){S.login.station=t.value;const s=S.login.stations.find(x=>x.code===t.value);S.login.name=mgrName(s&&s.mgr);render();return}
+ if(t.id==='auditSt'){saveAuditDraft();S.audit.station=t.value;loadAuditDraft();render();return}
+ const f=t.files&&t.files[0];
+ if(f&&t.dataset.aphoto){try{setBusy(1);S.audit.photo[t.dataset.aphoto]=await compress(f)}catch(err){toastT(err.message)}finally{setBusy(-1)}
+  const y=window.scrollY;S.audit.openCats=[...document.querySelectorAll('details.sec[open]')].map(x=>x.dataset.cat);render();window.scrollTo({top:y});return}
+ if(f&&t.dataset.photo){try{setBusy(1);S.check.photo[t.dataset.photo]=await compress(f)}catch(err){toastT(err.message)}finally{setBusy(-1)}render()}
+});
+document.addEventListener('submit',async e=>{
+ e.preventDefault();const f=e.target.dataset.form,v=id=>{const el=document.getElementById(id);return el?el.value.trim():''};
+ try{
+ if(f==='pw'){const pw=v('pw');if(!pw){S.login.err='請輸入密碼';render();return}
+  const r=await call('checkPassword',pw);
+  if(!r.ok){S.login.err=r.message;render();return}
+  S.login=Object.assign(S.login,{step:2,role:r.role,pw,err:'',stations:r.stations||[],officers:r.officers||[]});
+  if(r.role==='站長'){const s=S.login.stations[0];S.login.station=s?s.code:'';S.login.name=mgrName(s&&s.mgr)}
+  if(r.role==='安保專員'&&S.login.officers.length===1)S.login.officer=S.login.officers[0].name;
+  if(r.role==='系統管理員'){await doLogin({pw});return}
+  render();return}
+ if(f==='mgr'){const name=v('lgName');if(!name){S.login.err='請輸入填報人姓名';render();return}await doLogin({pw:S.login.pw,station:v('lgSt'),name});return}
+ if(f==='confirm'){const r=await call('confirmAudit',S.token,S.audit.result.recordId,v('cfName'));S.audit.result.confirmedBy=r.confirmedBy;toastT('站長已確認查核結果');render();return}
+ if(f==='station'){await call('adminSaveStation',S.token,{code:v('fsCode'),region:v('fsRegion'),group:v('fsGroup'),name:v('fsName'),mgr:v('fsMgr'),email:v('fsEmail')});toastT('已儲存站點');S.sheet=null;S.admin=await call('adminData',S.token);render();return}
+ if(f==='officer'){const regions=[...document.querySelectorAll('input[name=foReg]:checked')].map(x=>x.value).join('、');
+  await call('adminSaveOfficer',S.token,{originalName:v('foOrig'),name:v('foName'),regions,email:v('foEmail')});toastT('已儲存安保專員');S.sheet=null;S.admin=await call('adminData',S.token);render();return}
+ if(f==='item'){const code=await call('adminSaveItem',S.token,{code:v('fiCode'),freq:v('fiFreq'),risk:v('fiRisk'),cat:v('fiCat'),text:v('fiText'),std:v('fiStd'),law:v('fiLaw')});toastT('已儲存 '+code);S.sheet=null;S.admin=await call('adminData',S.token);render();return}
+ }catch(err){if(S.sess)render();else{S.login.err=stripErr(err&&err.message||err);render()}}
+});
+async function doLogin(req){
+ const r=await call('login',req);
+ S.token=r.token;S.sess=r.session;store.set('gi_token',r.token);store.set('gi_sess',r.session);
+ S.login.pw='';
+ if(location.hash&&location.hash!=='#home')history.replaceState(null,'',location.pathname+location.search+'#home');
+ await onRoute();
+}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&S.sheet){S.sheet=null;render()}});
+window.addEventListener('hashchange',onRoute);
+(async function boot(){
+ window.__appStarted=true;
+ const t=store.get('gi_token'),s=store.get('gi_sess');
+ if(t&&s){S.token=t;S.sess=s;document.getElementById('view').innerHTML='<p class="muted" style="text-align:center;margin-top:30vh">正在恢復登入…</p>';try{await loadHome()}catch(e){resetAll()}}
+ if(S.sess)await onRoute();else render();
+})();

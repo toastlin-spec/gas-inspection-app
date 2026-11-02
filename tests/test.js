@@ -12,6 +12,8 @@ ok('setupSheets_ 補上欄位：' + (added.join('；') || '不需要'));
 p = G.checkData_();
 assert(!p.some(x => x.level === '錯誤' && x.sheet !== '指令碼屬性'), JSON.stringify(p)); ok('補完後沒有錯誤，提醒 ' + p.length + ' 項：' + p.map(x => x.msg).join(' / '));
 
+const page = G.doGet().getContent();
+assert(page.indexOf('<?') < 0 && /atob\('[A-Za-z0-9+\/=]{1000,}'\)/.test(page) && page.indexOf('function vHome') < 0); ok('doGet：畫面程式以 Base64 嵌入，網頁原始碼中沒有程式本文');
 console.log('B. 登入');
 let r = G.checkPassword('00000'); assert(!r.ok); ok('錯誤密碼被拒絕');
 r = G.checkPassword(' 12345 '); assert(r.ok && r.role === '站長' && r.stations.length === 71); ok('站長密碼通過，取得 71 站');
