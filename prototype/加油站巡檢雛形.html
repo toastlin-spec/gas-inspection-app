@@ -205,7 +205,7 @@ const RISK_DAYS={高:1,中:3,低:7};
 
 /* ---------- 範例資料 ---------- */
 const S={
- role:'站務人員', station:'ST001',
+ role:'站長', station:'ST001',
  stations:[
   {code:'ST001',name:'和美站',region:'中區',on:true,daily:'none',audit:{date:'08/14',score:94.8}},
   {code:'ST002',name:'鹿港站',region:'中區',on:true,daily:'done',audit:{date:'09/03',score:97.9}},
@@ -214,8 +214,6 @@ const S={
   {code:'ST005',name:'斗六站',region:'南區',on:true,daily:'none',audit:{date:'08/27',score:91.7}},
   {code:'ST006',name:'新營站',region:'南區',on:true,daily:'done',audit:{date:'09/09',score:95.8}}],
  users:[
-  {email:'staff01@example.com',name:'王小明',role:'站務人員',station:'ST001',on:true},
-  {email:'mgr01@example.com',name:'陳志豪',role:'站長',station:'ST001',on:true},
   {email:'safety01@example.com',name:'林安保',role:'安保專員',station:'中區',on:true},
   {email:'admin01@example.com',name:'職安衛管理員',role:'系統管理員',station:'全部',on:true}],
  items:[
@@ -241,22 +239,22 @@ const S={
 let seq=4;
 S.issues=[
  {id:'ISS-0001',station:'ST001',src:'自主檢查',code:'SC-M01',title:'滅火器壓力指針在紅區（加油島 2 號）',risk:'高',status:'待處理',created:addDays(TODAY,-3),due:addDays(TODAY,-2),
-  log:[{t:addDays(TODAY,-3),who:'王小明（站務人員）',text:'通報異常，附照片 1 張'}]},
+  log:[{t:addDays(TODAY,-3),who:'陳志豪（站長）',text:'通報異常，附照片 1 張'}]},
  {id:'ISS-0002',station:'ST001',src:'SL-H015',code:'H015-D06',title:'卸油口未加鎖（95 無鉛）',risk:'高',status:'待驗證',created:addDays(TODAY,-2),due:addDays(TODAY,-1),
   log:[{t:addDays(TODAY,-2),who:'林安保（安保專員）',text:'季查核不符合'},{t:addDays(TODAY,-1),who:'陳志豪（站長）',text:'已更換卸油口鎖，附改善後照片'}]},
  {id:'ISS-0003',station:'ST001',src:'自主檢查',code:'SC-D01',title:'加油島地面油漬未清除',risk:'中',status:'改善中',created:addDays(TODAY,-1),due:addDays(TODAY,2),
-  log:[{t:addDays(TODAY,-1),who:'王小明（站務人員）',text:'通報異常'},{t:TODAY,who:'陳志豪（站長）',text:'指派清潔，今日完成'}]},
+  log:[{t:addDays(TODAY,-1),who:'陳志豪（站長）',text:'通報異常'},{t:TODAY,who:'陳志豪（站長）',text:'指派清潔，今日完成'}]},
  {id:'ISS-0004',station:'ST001',src:'自主檢查',code:'SC-M08',title:'急救箱優碘過期',risk:'低',status:'已結案',created:addDays(TODAY,-12),due:addDays(TODAY,-5),closed:addDays(TODAY,-6),
-  log:[{t:addDays(TODAY,-12),who:'王小明（站務人員）',text:'通報異常'},{t:addDays(TODAY,-8),who:'陳志豪（站長）',text:'已補充藥品'},{t:addDays(TODAY,-6),who:'林安保（安保專員）',text:'驗證合格，結案'}]}
+  log:[{t:addDays(TODAY,-12),who:'陳志豪（站長）',text:'通報異常'},{t:addDays(TODAY,-8),who:'陳志豪（站長）',text:'已補充藥品'},{t:addDays(TODAY,-6),who:'林安保（安保專員）',text:'驗證合格，結案'}]}
 ];
 S.items.filter(i=>i.form==='SL-H015'&&i.other).forEach(i=>S.audit.ans[i.code]='na');
 
-const ROLES=['站務人員','站長','安保專員','系統管理員'];
+const ROLES=['站長','安保專員','系統管理員'];
 const TABS={
  home:{label:'首頁',icon:'home',roles:ROLES},
- check:{label:'自主檢查',icon:'check',roles:['站務人員','站長']},
+ check:{label:'自主檢查',icon:'check',roles:['站長']},
  audit:{label:'查核',icon:'audit',roles:['安保專員']},
- issues:{label:'異常',icon:'issues',roles:['站務人員','站長','安保專員']},
+ issues:{label:'異常',icon:'issues',roles:['站長','安保專員']},
  manage:{label:'管理',icon:'manage',roles:['系統管理員']}
 };
 const stName=c=>(S.stations.find(s=>s.code===c)||{}).name||c;
@@ -442,10 +440,10 @@ function vManage(){
  }
  if(S.manageTab==='人員'){
   html+=`<section class="panel">${S.users.map((u,k)=>`<div class="list-row ${u.on?'':'off'}"><div><b>${esc(u.name)}</b> <span class="small muted">${u.role}</span><div class="sub">${esc(u.email)}・${esc(u.station.startsWith('ST')?stName(u.station):u.station)}</div></div><button class="switch" role="switch" aria-checked="${u.on}" aria-label="啟用 ${esc(u.name)}" data-act="tog" data-list="users" data-k="${k}"></button></div>`).join('')}</section>
-  <form class="panel stack" data-form="user"><h2>新增人員</h2>
+  <p class="small muted" style="margin:0">只建立安保專員與系統管理員；站長以站點身分進入，不建個人帳號。</p><form class="panel stack" data-form="user"><h2>新增人員</h2>
    <div class="field"><label for="fuEmail">Google 帳號 Email</label><input type="email" id="fuEmail" placeholder="name@company.com" required></div>
-   <div class="grid2"><div class="field"><label for="fuName">姓名</label><input type="text" id="fuName" required></div><div class="field"><label for="fuRole">角色</label><select id="fuRole">${ROLES.map(r=>`<option>${r}</option>`).join('')}</select></div></div>
-   <div class="field"><label for="fuSt">所屬站點或區域</label><select id="fuSt">${S.stations.map(s=>`<option value="${s.code}">${esc(s.name)}（${s.code}）</option>`).join('')}<option>中區</option><option>南區</option><option>全部</option></select></div>
+   <div class="grid2"><div class="field"><label for="fuName">姓名</label><input type="text" id="fuName" required></div><div class="field"><label for="fuRole">角色</label><select id="fuRole"><option>安保專員</option><option>系統管理員</option></select></div></div>
+   <div class="field"><label for="fuSt">負責區域</label><select id="fuSt"><option>中區</option><option>南區</option><option>全部</option></select></div>
    <button class="btn primary">新增人員</button></form>`;
  }
  if(S.manageTab==='檢查項目'){
@@ -470,9 +468,9 @@ function render(){
  document.getElementById('roles').innerHTML=`<small>示範角色</small>`+ROLES.map(x=>`<button class="chip" aria-pressed="${S.role===x}" data-act="role" data-r="${x}">${x}</button>`).join('');
  const sel=document.getElementById('stationSel');
  sel.innerHTML=S.stations.filter(s=>s.on).map(s=>`<option value="${s.code}" ${s.code===S.station?'selected':''}>${esc(s.name)}</option>`).join('');
- sel.hidden=!['站務人員','站長'].includes(S.role);
+ sel.hidden=S.role!=='站長';
  const u=S.users.find(x=>x.role===S.role);
- document.getElementById('ctx').textContent=`${u?u.name:''}・${S.role}`;
+ document.getElementById('ctx').textContent=u?`${u.name}・${S.role}`:`${stName(S.station)}・站長（站點身分）`;
  const open=S.issues.filter(i=>i.status!=='已結案'&&(S.role==='安保專員'?i.status==='待驗證':i.station===S.station)).length;
  document.getElementById('tabbar').innerHTML=Object.entries(TABS).filter(([k,t])=>t.roles.includes(S.role)).map(([k,t])=>`<a href="#${k}" ${k===r?'aria-current="page"':''}>${ic(t.icon)}${t.label}${k==='issues'&&open?`<span class="badge">${open}</span>`:''}</a>`).join('');
  const V={home:vHome,check:vCheck,audit:vAudit,issues:vIssues,manage:vManage};
@@ -497,7 +495,7 @@ document.addEventListener('click',e=>{
   const bad=list.filter(i=>!c.ans[i.code]||(c.ans[i.code]==='ng'&&!(c.note[i.code]||'').trim()));
   if(bad.length){c.tried=true;render();const t=document.getElementById('it-'+bad[0].code);t&&t.scrollIntoView({block:'center',behavior:'smooth'});toastT(`還有 ${bad.length} 項需要完成`);return}
   const ng=list.filter(i=>c.ans[i.code]==='ng');
-  ng.forEach(i=>newIssue({station:S.station,src:'自主檢查',code:i.code,title:c.note[i.code].trim(),risk:i.risk,log:[{t:new Date(TODAY),who:'王小明（站務人員）',text:`${c.freq}檢查通報異常${c.photo[i.code]?'，附照片 1 張':''}`}]}));
+  ng.forEach(i=>newIssue({station:S.station,src:'自主檢查',code:i.code,title:c.note[i.code].trim(),risk:i.risk,log:[{t:new Date(TODAY),who:'陳志豪（站長）',text:`${c.freq}檢查通報異常${c.photo[i.code]?'，附照片 1 張':''}`}]}));
   c.submitted={freq:c.freq,total:list.length,abn:ng.length,high:ng.some(i=>i.risk==='高')};
   if(c.freq==='每日'){const s=S.stations.find(x=>x.code===S.station);if(s)s.daily='done'}
   render();window.scrollTo({top:0});return}
