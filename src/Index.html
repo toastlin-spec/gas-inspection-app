@@ -210,7 +210,7 @@ svg.i.s{width:18px;height:18px}
 </style>
 <script>
 /* 啟動監看：主程式 8 秒內沒有啟動時，在畫面上顯示可能原因（與主程式分開，主程式有語法錯誤時仍會執行） */
-window.__errs=[];
+window.__appVersion='1.0.3';window.__errs=[];
 window.addEventListener('error',function(e){window.__errs.push((e.message||'錯誤')+(e.lineno?'（第 '+e.lineno+' 行）':''))});
 setTimeout(function(){
   if(window.__appStarted)return;
@@ -221,8 +221,8 @@ setTimeout(function(){
   '<li>Apps Script 的 Index.html 有完整貼上，最後一行是 &lt;/html&gt;</li>'+
   '<li>修改程式後，已從「部署 → 管理部署作業 → 編輯 → 版本：新版本」重新部署</li>'+
   '<li>瀏覽器沒有封鎖 script.google.com 的指令碼</li></ol>'+
-  (window.__errs.length?'<span class="small" style="color:var(--bad)">錯誤訊息：'+window.__errs.slice(0,3).join('；').replace(/\x3c/g,'&lt;')+'</span>':'<span class="small muted">沒有收到錯誤訊息。</span>')+
-  '<button class="btn block" onclick="location.reload()">重新載入</button></div>';
+  (window.__errs.length?'<span class="small" style="color:var(--bad)">錯誤訊息：'+window.__errs.slice(0,3).join('；').split(String.fromCharCode(60)).join('&lt;')+'</span>':'<span class="small muted">沒有收到錯誤訊息。</span>')+
+  '<span class="small muted">畫面版本 '+(window.__appVersion||'1.0.3')+'</span><button class="btn block" onclick="location.reload()">重新載入</button></div>';
 },8000);
 </script>
 </head>
@@ -253,7 +253,9 @@ const ICON={
  edit:'<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>'
 };
 const ic=(n,c='')=>`<svg class="i ${c}" viewBox="0 0 24 24" aria-hidden="true">${ICON[n]}</svg>`;
-const esc=s=>String(s??'').replace(/[&\x3c\x3e"']/g,c=>({'&':'&amp;','\x3c':'&lt;','\x3e':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ESC_MAP={'&':'&amp;','"':'&quot;',"'":'&#39;'};ESC_MAP[String.fromCharCode(60)]='&lt;';ESC_MAP[String.fromCharCode(62)]='&gt;';
+const esc=s=>Array.from(String(s??''),c=>ESC_MAP[c]||c).join('');
+const stripErr=m=>{m=String(m||'');return m.indexOf('Error:')===0?m.slice(6).trim():m};
 const REGIONS=['北區','中區','南區'];
 const md=ymd=>ymd?`${Number(ymd.slice(5,7))}/${ymd.slice(8,10)}`:'';
 const store={get(k){try{return JSON.parse(sessionStorage.getItem(k))}catch(e){return null}},set(k,v){try{sessionStorage.setItem(k,JSON.stringify(v))}catch(e){}},del(k){try{sessionStorage.removeItem(k)}catch(e){}}};
@@ -281,7 +283,7 @@ async function call(fn,...args){
  try{return await api(fn,...args)}
  catch(e){const m=String(e&&e.message||e);
   if(m.indexOf('SESSION_EXPIRED')>=0){toastT('登入已逾時，請重新登入');resetAll();render()}
-  else toastT(m.replace(/^Error:\s*/,''));
+  else toastT(stripErr(m));
   throw e}
  finally{setBusy(-1)}}
 function setBusy(d){S.busy=Math.max(0,S.busy+d);document.getElementById('busy').hidden=!S.busy;document.querySelectorAll('[data-busy]').forEach(b=>b.disabled=!!S.busy)}
@@ -309,7 +311,7 @@ async function onRoute(){
 /* ---------- 共用 ---------- */
 function groupBy(arr,f){const m=new Map();arr.forEach(x=>{const k=f(x);if(!m.has(k))m.set(k,[]);m.get(k).push(x)});return m}
 function stationOptions(list,sel){return REGIONS.map(r=>{const g=list.filter(s=>s.region===r);return g.length?`<optgroup label="${r}">${g.map(s=>`<option value="${esc(s.code)}" ${s.code===sel?'selected':''}>${esc(s.group)}・${esc(s.name)}</option>`).join('')}</optgroup>`:''}).join('')}
-const mgrName=s=>String(s||'').replace(/（兼）|\(兼\)/g,'').trim();
+const mgrName=s=>String(s||'').split('（兼）').join('').split('(兼)').join('').trim();
 const draftKey=()=>S.home&&S.sess?`gi_draft_${S.sess.station}_${S.check.freq}_${S.home.today}`:'';
 function saveDraft(){const k=draftKey();if(k)draft.set(k,{ans:S.check.ans,note:S.check.note})}
 function loadDraft(){const k=draftKey(),d=k&&draft.get(k);S.check.ans=d&&d.ans||{};S.check.note=d&&d.note||{};S.check.photo={};S.check.tried=false;S.check.result=null}
@@ -333,7 +335,7 @@ function vLogin(){
    ${L.err?`<p class="msg">${esc(L.err)}</p>`:''}
    <button class="btn primary block" data-act="enterOfficer" data-busy>進入</button><button class="btn ghost block" data-act="loginBack">返回</button></div>`;
  }
- return `<div class="login"><div class="row"><div class="mark">${ic('audit')}</div><div><h1>加油站巡檢</h1><span class="small muted">山隆通運 油品事業部</span></div></div>${body}</div>`;
+ return `<div class="login"><div class="row"><div class="mark">${ic('audit')}</div><div><h1>加油站巡檢</h1><span class="small muted">山隆通運 油品事業部</span></div></div>${body}<p class="small muted" style="text-align:center;margin:0">畫面版本 ${window.__appVersion}</p></div>`;
 }
 
 /* ---------- 首頁 ---------- */
@@ -573,7 +575,7 @@ document.addEventListener('submit',async e=>{
  if(f==='officer'){const regions=[...document.querySelectorAll('input[name=foReg]:checked')].map(x=>x.value).join('、');
   await call('adminSaveOfficer',S.token,{originalName:v('foOrig'),name:v('foName'),regions,email:v('foEmail')});toastT('已儲存安保專員');S.sheet=null;S.admin=await call('adminData',S.token);render();return}
  if(f==='item'){const code=await call('adminSaveItem',S.token,{code:v('fiCode'),freq:v('fiFreq'),risk:v('fiRisk'),cat:v('fiCat'),text:v('fiText'),std:v('fiStd'),law:v('fiLaw')});toastT('已儲存 '+code);S.sheet=null;S.admin=await call('adminData',S.token);render();return}
- }catch(err){if(S.sess)render();else{S.login.err=String(err&&err.message||err).replace(/^Error:\s*/,'');render()}}
+ }catch(err){if(S.sess)render();else{S.login.err=stripErr(err&&err.message||err);render()}}
 });
 async function doLogin(req){
  const r=await call('login',req);
