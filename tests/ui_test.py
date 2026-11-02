@@ -57,6 +57,30 @@ with sync_playwright() as p:
     ok('安保專員首頁：' + pg.inner_text('main h2 >> nth=0'))
     pg.screenshot(path=OUT + '6_officer.png')
 
+    pg.click('nav a[href="#audit"]'); pg.wait_for_selector('#auditSt')
+    pg.select_option('#auditSt', 'C04'); pg.wait_for_selector('details.sec')
+    ok('查核分頁：' + pg.inner_text('main h1') + '，站點選單 %d 站' % pg.locator('#auditSt option').count())
+    pg.click('text=完成查核'); pg.wait_for_selector('.toast:not([hidden])'); ok('未填完提示：' + pg.inner_text('#toast'))
+    pg.evaluate('''() => { document.querySelectorAll('details.sec').forEach(d => d.open = true); }''')
+    codes = pg.evaluate('''() => [...document.querySelectorAll('button.ok[data-act="aans"]')].map(b => b.dataset.code)''')
+    for c in codes:
+        if c in ('H015-B07','H015-C14','H015-D10','H015-F07'): continue
+        pg.evaluate('''c => { document.querySelectorAll('details.sec').forEach(d => d.open = true); document.querySelector(`#it-${c} button.${c==='H015-C06'||c==='H015-C12'?'na':(c==='H015-D06'?'ng':'ok')}`).click(); }''', c)
+    pg.fill('#an-H015-D06', '95 無鉛卸油口未上鎖')
+    pg.set_input_files('#ap-H015-D06', OUT + 'photo.png'); pg.wait_for_selector('#it-H015-D06 img.thumb')
+    score = pg.inner_text('.dock .score b'); ok('即時計分：' + score + ' 分｜' + pg.inner_text('.dock .mono'))
+    pg.screenshot(path=OUT + '9_audit.png')
+    pg.click('text=完成查核'); pg.wait_for_selector('.done-card')
+    ok('查核完成：' + pg.inner_text('.done-card .score').replace(chr(10), ' '))
+    pg.click('form[data-form="confirm"] button'); pg.wait_for_selector('text=已確認查核結果')
+    ok('站長確認：' + pg.inner_text('.done-card p.small'))
+    with pg.expect_download() as dl:
+        pg.click('text=下載 Excel 查核表')
+    ok('下載檔案：' + dl.value.suggested_filename)
+    pg.screenshot(path=OUT + '10_audit_done.png')
+    pg.click('nav a[href="#home"]'); pg.wait_for_selector('text=本季已查核')
+    ok('首頁查核進度：' + pg.inner_text('text=本季已查核'))
+
     pg.click('text=登出'); pg.wait_for_selector('#pw')
     pg.fill('#pw', '77777'); pg.click('text=下一步'); pg.wait_for_selector('nav a[href="#manage"]')
     pg.click('nav a[href="#manage"]'); pg.wait_for_selector('.list-row')

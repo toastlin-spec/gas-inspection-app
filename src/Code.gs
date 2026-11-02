@@ -1,7 +1,7 @@
 /**
  * 加油站巡檢 App — 後端（第一階段）
  *
- * 功能：密碼登入、首頁狀態、自主檢查送出（含照片）、異常清單（唯讀）、管理設定、資料檢查。
+ * 功能：密碼登入、首頁狀態、自主檢查送出（含照片）、SL-H015 查核與匯出 Excel、異常清單（唯讀）、管理設定、資料檢查。
  * 資料全部存在綁定的 Google 試算表；照片存在指令碼屬性 PHOTO_FOLDER_ID 指定的資料夾。
  *
  * 指令碼屬性（專案設定 → 指令碼屬性）：
@@ -16,12 +16,14 @@ const SESSION_SECONDS = 6 * 60 * 60; // CacheService 上限 6 小時
 const REGIONS = ['北區', '中區', '南區'];
 const RESULT_LABEL = { ok: '正常', ng: '異常', na: '不適用' };
 const MAX_PHOTO_CHARS = 4 * 1024 * 1024;
+const AUDIT_FORM = 'SL-H015查核表';
+const AUDIT_LABEL = { ok: '符合', ng: '不符合', na: '不適用' };
 
 const REQUIRED_HEADERS = {
   '站點': ['站點代碼', '站名', '區域', '組別', '站長', '站長Email', '啟用', '備註'],
   '人員': ['姓名', '角色', '負責區域', 'Email', '啟用', '備註'],
   '檢查項目': ['項目代碼', '表單類型', '版本', '頻率', '類別', '檢查內容', '判定標準', '法規依據', '風險等級', '配分', '排序', '啟用'],
-  '檢查紀錄': ['紀錄編號', '表單類型', '版本', '站點代碼', '頻率', '檢查日期', '填報人', '送出時間', '異常數', '得分', '站長確認時間'],
+  '檢查紀錄': ['紀錄編號', '表單類型', '版本', '站點代碼', '頻率', '檢查日期', '填報人', '送出時間', '異常數', '得分', '站長確認時間', '站長確認人'],
   '檢查明細': ['紀錄編號', '項目代碼', '結果', '得分', '說明', '照片連結'],
   '異常追蹤': ['異常編號', '紀錄編號', '站點代碼', '來源', '項目代碼', '異常說明', '異常照片', '風險等級', '狀態', '建立日期', '改善期限', '處置說明', '改善後照片', '結案人', '結案日期', '處置紀錄'],
   '設定': ['參數', '值', '單位', '說明']
@@ -156,11 +158,13 @@ function getHome(token) {
   };
 
   const items = items_().filter(i => i.on && i.form === '自主檢查').map(publicItem_);
+  const audits = auditSummary_(codes);
   return {
     session: sess,
     today: today,
-    stations: stations.map(s => Object.assign(publicStation_(s), status[s.code])),
+    stations: stations.map(s => Object.assign(publicStation_(s), status[s.code], { lastAudit: audits.last[s.code] || null, auditedThisQuarter: !!audits.quarter[s.code] })),
     counts: counts,
+    audit: { quarter: quarterLabel_(today), done: Object.keys(audits.quarter).length, total: stations.length, recent: audits.recent.slice(0, 5) },
     items: items,
     riskDays: riskDays_()
   };
@@ -242,7 +246,7 @@ function submitCheck(token, payload) {
   }
 
   let mailed = false;
-  try { mailed = notifyHighRisk_(station, issueRows, reporter); } catch (e) { console.warn('通知寄送失敗：' + e); }
+  try { mailed = notifyHighRisk_(station, issueRows, reporter, '自主檢查'); } catch (e) { console.warn('通知寄送失敗：' + e); }
 
   return {
     recordId: recordId, freq: freq, total: items.length, abnormal: issueRows.length,
@@ -283,7 +287,7 @@ function nextIssueSeq_(now) {
 }
 
 /** 高風險異常立即寄信給站長與負責區域的安保專員；沒有 Email 時略過。 */
-function notifyHighRisk_(station, issueRows, reporter) {
+function notifyHighRisk_(station, issueRows, reporter, sourceLabel) {
   const high = issueRows.filter(r => r['風險等級'] === '高');
   if (!high.length) return false;
   const officer = officers_().find(o => o.on && o.regions.indexOf(station.region) >= 0);
@@ -297,9 +301,260 @@ function notifyHighRisk_(station, issueRows, reporter) {
   MailApp.sendEmail({
     to: to.join(','),
     subject: `【高風險異常】${station.name} ${high.length} 項`,
-    body: `${station.region}${station.group} ${station.name}（填報人：${reporter}）在自主檢查中通報高風險異常：\n\n${lines.join('\n\n')}\n\n請於改善期限內處置。此信由加油站巡檢系統自動寄出。`
+    body: `${station.region}${station.group} ${station.name}（${sourceLabel === 'SL-H015' ? '查核人' : '填報人'}：${reporter}）在${sourceLabel === 'SL-H015' ? ' SL-H015 季查核' : '自主檢查'}中發現高風險異常：\n\n${lines.join('\n\n')}\n\n請於改善期限內處置。此信由加油站巡檢系統自動寄出。`
   });
   return true;
+}
+
+
+/* ============================== SL-H015 季查核（安保專員） ============================== */
+
+/** 查核表單：負責區域的站點（含本季是否已查核）與啟用中的 SL-H015 項目。 */
+function getAuditForm(token) {
+  const sess = session_(token, ['安保專員']);
+  const stations = scopeStations_(sess);
+  const codes = {};
+  stations.forEach(s => { codes[s.code] = true; });
+  const audits = auditSummary_(codes);
+  const items = auditItems_();
+  if (!items.length) throw new Error('試算表「檢查項目」沒有啟用中的 SL-H015 項目');
+  return {
+    today: today_(),
+    quarter: quarterLabel_(today_()),
+    version: items[0].version || '',
+    stations: stations.map(s => Object.assign(publicStation_(s), { auditedThisQuarter: !!audits.quarter[s.code], lastAudit: audits.last[s.code] || null })),
+    items: items.map(i => ({ code: i.code, cat: i.cat, text: i.text, law: i.law, pts: i.pts, risk: i.risk, other: isOtherItem_(i) })),
+    riskDays: riskDays_()
+  };
+}
+
+/**
+ * payload = { station, answers: [{ code, result: 'ok'|'ng'|'na', note, other, photo }] }
+ * 計分：查核得分 ＝ 符合項目配分合計 ÷（滿分 − 不適用項目配分合計）× 100，取小數一位。
+ */
+function submitAudit(token, payload) {
+  const sess = session_(token, ['安保專員']);
+  payload = payload || {};
+  const station = scopeStations_(sess).find(s => s.code === String(payload.station || ''));
+  if (!station) throw new Error('請選擇負責區域內的站點');
+  const items = auditItems_();
+  const ans = {};
+  (payload.answers || []).forEach(a => { if (a && a.code) ans[a.code] = a; });
+
+  const missing = items.filter(i => !ans[i.code] || !AUDIT_LABEL[ans[i.code].result]);
+  if (missing.length) throw new Error('還有 ' + missing.length + ' 項未填寫');
+  const noOther = items.filter(i => isOtherItem_(i) && ans[i.code].result !== 'na' && !clean_(ans[i.code].other, 100));
+  if (noOther.length) throw new Error('「其他」項目判定為符合或不符合時，請填寫項目內容');
+
+  const score = auditScore_(items, ans);
+  const now = new Date();
+  const today = today_();
+  const stamp = fmt_(now, 'yyyy-MM-dd HH:mm:ss');
+  const recordId = 'AU-' + fmt_(now, 'yyyyMMdd-HHmmss') + '-' + station.code;
+  const days = riskDays_();
+
+  const photos = {};
+  items.forEach(i => {
+    const a = ans[i.code];
+    if (a.result === 'ng' && a.photo) photos[i.code] = savePhoto_(a.photo, station.code, recordId + '_' + i.code);
+  });
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  const issueRows = [];
+  try {
+    let seq = nextIssueSeq_(now);
+    const details = items.map(i => {
+      const a = ans[i.code];
+      const note = clean_(a.note, 500);
+      const other = isOtherItem_(i) ? clean_(a.other, 100) : '';
+      if (a.result === 'ng') {
+        const subject = other || (i.text.length > 60 ? i.text.slice(0, 60) + '…' : i.text);
+        issueRows.push({
+          '異常編號': 'ISS-' + fmt_(now, 'yyyyMM') + '-' + pad_(seq++, 3), '紀錄編號': recordId, '站點代碼': station.code,
+          '來源': 'SL-H015', '項目代碼': i.code, '異常說明': note ? (other ? other + '：' + note : note) : subject, '異常照片': photos[i.code] || '',
+          '風險等級': i.risk || riskForPoints_(i.pts), '狀態': '待處理', '建立日期': today,
+          '改善期限': addDays_(today, days[i.risk || riskForPoints_(i.pts)] || 7), '處置說明': '', '改善後照片': '',
+          '結案人': '', '結案日期': '',
+          '處置紀錄': JSON.stringify([{ t: stamp, who: sess.name + '（安保專員）', text: 'SL-H015 季查核不符合' + (photos[i.code] ? '，附照片 1 張' : '') }])
+        });
+      }
+      return {
+        '紀錄編號': recordId, '項目代碼': i.code, '結果': AUDIT_LABEL[a.result],
+        '得分': a.result === 'ok' ? i.pts : (a.result === 'ng' ? 0 : ''),
+        '說明': (other ? '其他：' + other : '') + (other && note ? '；' : '') + note,
+        '照片連結': photos[i.code] || ''
+      };
+    });
+    appendObjects_('檢查紀錄', [{
+      '紀錄編號': recordId, '表單類型': AUDIT_FORM, '版本': items[0].version || '', '站點代碼': station.code, '頻率': '每季',
+      '檢查日期': today, '填報人': sess.name, '送出時間': stamp, '異常數': issueRows.length,
+      '得分': score.score === null ? '' : score.score, '站長確認時間': '', '站長確認人': ''
+    }]);
+    appendObjects_('檢查明細', details);
+    appendObjects_('異常追蹤', issueRows);
+    SpreadsheetApp.flush();
+  } finally {
+    lock.releaseLock();
+  }
+  let mailed = false;
+  try { mailed = notifyHighRisk_(station, issueRows, sess.name, 'SL-H015'); } catch (e) { console.warn('通知寄送失敗：' + e); }
+  return Object.assign({ recordId: recordId, station: publicStation_(station), date: today, mailed: mailed, high: issueRows.filter(r => r['風險等級'] === '高').length }, score);
+}
+
+/** 站長確認查核結果（在安保專員的手機上輸入姓名），取代紙本簽名。 */
+function confirmAudit(token, recordId, name) {
+  const sess = session_(token, ['安保專員', '系統管理員']);
+  name = clean_(name, 30);
+  if (!name) throw new Error('請輸入站長姓名');
+  return withLock_(() => {
+    const rec = auditRecord_(sess, recordId);
+    if (rec['站長確認時間']) throw new Error('這次查核已經確認過了');
+    const stamp = fmt_(new Date(), 'yyyy-MM-dd HH:mm:ss');
+    updateRow_('檢查紀錄', rec._row, { '站長確認時間': stamp, '站長確認人': name });
+    return { recordId: recordId, confirmedAt: stamp, confirmedBy: name };
+  });
+}
+
+/** 負責區域內最近的查核紀錄。 */
+function listAudits(token) {
+  const sess = session_(token, ['安保專員', '系統管理員']);
+  const codes = {};
+  scopeStations_(sess).forEach(s => { codes[s.code] = true; });
+  return auditSummary_(codes).recent;
+}
+
+/**
+ * 匯出一次查核為 .xlsx（格式比照 SL-H015 紙本表單）。
+ * 做法：建立暫存試算表 → 以擁有者權限匯出 xlsx → 刪除暫存檔 → 回傳 base64 給前端下載。
+ */
+function exportAudit(token, recordId) {
+  const sess = session_(token, ['安保專員', '系統管理員']);
+  const rec = auditRecord_(sess, recordId);
+  const station = stations_().find(s => s.code === String(rec['站點代碼'])) || { name: rec['站點代碼'], region: '', group: '' };
+  const byCode = {};
+  items_().forEach(i => { byCode[i.code] = i; });
+  const details = readTable_('檢查明細').rows.filter(r => String(r['紀錄編號']) === recordId);
+  const date = dateStr_(rec['檢查日期']);
+  const confirmed = rec['站長確認時間'] ? `${rec['站長確認人']}（${String(fmtAny_(rec['站長確認時間'])).slice(0, 16)}）` : '尚未確認';
+
+  let pass = 0, total = 0, na = 0;
+  const body = details.map(d => {
+    const it = byCode[String(d['項目代碼'])] || { code: d['項目代碼'], cat: '', text: '', law: '', pts: 0 };
+    const pts = Number(it.pts) || 0;
+    total += pts;
+    if (d['結果'] === '符合') pass += pts;
+    if (d['結果'] === '不適用') na += pts;
+    const desc = String(d['說明'] || '');
+    return [String(it.code).replace('H015-', ''), it.cat, it.text + (desc ? '\n（' + desc + '）' : ''), pts, d['結果'], d['結果'] === '不適用' ? '—' : (d['得分'] === '' ? '' : Number(d['得分'])), it.law || ''];
+  });
+  const base = total - na;
+  const score = rec['得分'] === '' ? (base > 0 ? Math.round(pass / base * 1000) / 10 : '') : Number(rec['得分']);
+
+  const title = '加油站安全衛生管理及營運設備查核表' + (rec['版本'] ? '（SL-H015 ' + rec['版本'] + ' 版）' : '');
+  const rows = [
+    [title, '', '', '', '', '', ''],
+    ['站別：' + station.name + '（' + station.region + station.group + '）', '', '', '查核日期：' + date, '', '', ''],
+    ['查核人：' + rec['填報人'], '', '', '站長確認：' + confirmed, '', '', ''],
+    ['項次', '類別', '檢查項目', '配分', '查核情況', '得分', '法令規定']
+  ].concat(body).concat([
+    ['', '', '符合項目得分合計', '', '', pass, ''],
+    ['', '', '滿分基準（' + total + ' 分扣除不適用 ' + na + ' 分）', '', '', base, ''],
+    ['', '', '查核得分（百分制）', '', '', score, ''],
+    ['備註：第一種危險場所：在加油機內部自其基礎向上至1.22公尺範圍內，及離加油機1.22公尺之四周自該基礎起向下至地面及向上至46公分處空間；第二種危險場所：在屋外其距加油機(即泵)外殼6公尺或裝有管路之油槽3公尺之四周範圍內至地面向上至46公分處。', '', '', '', '', '', '']
+  ]);
+
+  const filename = 'SL-H015查核表_' + station.name + '_' + date.split('-').join('') + '.xlsx';
+  const tmp = SpreadsheetApp.create('匯出暫存_' + filename);
+  const file = DriveApp.getFileById(tmp.getId());
+  try {
+    const folderId = getProp_('EXPORT_FOLDER_ID');
+    if (folderId) file.moveTo(DriveApp.getFolderById(folderId));
+    const sh = tmp.getSheets()[0];
+    sh.setName('SL-H015查核表');
+    const n = rows.length, head = 4, last = head + body.length;
+    sh.getRange(1, 1, n, 7).setValues(rows).setFontFamily('Arial').setFontSize(10).setVerticalAlignment('middle');
+    sh.getRange(1, 1, 1, 7).merge().setFontSize(14).setFontWeight('bold').setHorizontalAlignment('center');
+    [2, 3].forEach(r => { sh.getRange(r, 1, 1, 3).merge(); sh.getRange(r, 4, 1, 4).merge(); });
+    sh.getRange(head, 1, 1, 7).setFontWeight('bold').setBackground('#e2efe6').setHorizontalAlignment('center');
+    sh.getRange(head, 1, last - head + 4, 7).setBorder(true, true, true, true, true, true);
+    sh.getRange(head + 1, 3, body.length, 1).setWrap(true);
+    sh.getRange(head + 1, 7, body.length, 1).setWrap(true);
+    sh.getRange(head + 1, 4, body.length + 3, 3).setHorizontalAlignment('center');
+    sh.getRange(last + 1, 3, 3, 1).setFontWeight('bold').setHorizontalAlignment('right');
+    sh.getRange(last + 3, 6).setFontWeight('bold').setFontSize(12);
+    sh.getRange(n, 1, 1, 7).merge().setWrap(true).setFontSize(9);
+    [48, 96, 380, 48, 72, 48, 220].forEach((w, k) => sh.setColumnWidth(k + 1, w));
+    sh.setFrozenRows(head);
+    SpreadsheetApp.flush();
+    const blob = UrlFetchApp.fetch('https://docs.google.com/spreadsheets/d/' + tmp.getId() + '/export?format=xlsx', {
+      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true
+    });
+    if (blob.getResponseCode() !== 200) throw new Error('匯出失敗（' + blob.getResponseCode() + '），請稍後再試');
+    return { filename: filename, data: Utilities.base64Encode(blob.getBlob().getBytes()) };
+  } finally {
+    try { file.setTrashed(true); } catch (e) { console.warn('暫存檔刪除失敗：' + e); }
+  }
+}
+
+/** 第一次部署或更新授權範圍後，在編輯器執行一次這個函式完成授權。 */
+function authorizeOnce() {
+  ss_().getName();
+  DriveApp.getRootFolder();
+  MailApp.getRemainingDailyQuota();
+  UrlFetchApp.fetch('https://www.google.com', { muteHttpExceptions: true });
+  return '授權完成';
+}
+
+function auditItems_() { return items_().filter(i => i.on && i.form === AUDIT_FORM); }
+function isOtherItem_(i) { return String(i.text).indexOf('其他') === 0; }
+function riskForPoints_(pts) { return pts >= 3 ? '高' : (pts >= 2 ? '中' : '低'); }
+
+function auditScore_(items, ans) {
+  let pass = 0, total = 0, na = 0, ok = 0, ng = 0, nac = 0;
+  items.forEach(i => {
+    const pts = Number(i.pts) || 0, r = ans[i.code].result;
+    total += pts;
+    if (r === 'ok') { pass += pts; ok++; }
+    else if (r === 'na') { na += pts; nac++; }
+    else ng++;
+  });
+  const base = total - na;
+  return { pass: pass, total: total, na: na, base: base, okCount: ok, ngCount: ng, naCount: nac, score: base > 0 ? Math.round(pass / base * 1000) / 10 : null };
+}
+
+function auditRecord_(sess, recordId) {
+  const rec = readTable_('檢查紀錄').rows.find(r => String(r['紀錄編號']) === String(recordId) && String(r['表單類型']) === AUDIT_FORM);
+  if (!rec) throw new Error('找不到查核紀錄 ' + recordId);
+  if (!scopeStations_(sess).some(s => s.code === String(rec['站點代碼']))) throw new Error('沒有權限查看這筆查核');
+  return rec;
+}
+
+/** 依站點整理查核紀錄：最近一次、本季是否已查核、最近清單。 */
+function auditSummary_(codes) {
+  const q = quarterLabel_(today_());
+  const names = {};
+  stations_().forEach(s => { names[s.code] = s.name; });
+  const recs = readTable_('檢查紀錄').rows
+    .filter(r => String(r['表單類型']) === AUDIT_FORM && codes[String(r['站點代碼'])])
+    .map(r => ({
+      recordId: String(r['紀錄編號']), station: String(r['站點代碼']), stationName: names[String(r['站點代碼'])] || '',
+      date: dateStr_(r['檢查日期']), submitted: String(fmtAny_(r['送出時間'])), auditor: String(r['填報人'] || ''),
+      score: r['得分'] === '' ? null : Number(r['得分']), ng: Number(r['異常數']) || 0,
+      confirmedBy: String(r['站長確認人'] || ''), confirmed: !!r['站長確認時間']
+    }))
+    .sort((a, b) => (b.submitted > a.submitted ? 1 : -1));
+  const last = {}, quarter = {};
+  recs.forEach(r => {
+    if (!last[r.station]) last[r.station] = { date: r.date, score: r.score, recordId: r.recordId };
+    if (quarterLabel_(r.date) === q) quarter[r.station] = true;
+  });
+  return { recent: recs, last: last, quarter: quarter };
+}
+
+function quarterLabel_(ymd) {
+  if (!ymd) return '';
+  return ymd.slice(0, 4) + ' 年第 ' + Math.ceil(Number(ymd.slice(5, 7)) / 3) + ' 季';
 }
 
 /* ============================== 異常（第一階段：唯讀） ============================== */
@@ -654,6 +909,10 @@ function addDays_(ymd, n) {
   const p = ymd.split('-').map(Number);
   const d = new Date(Date.UTC(p[0], p[1] - 1, p[2] + n, 4)); // 台灣時間中午，避免跨日
   return Utilities.formatDate(d, TZ, 'yyyy-MM-dd');
+}
+function fmtAny_(v) {
+  if (Object.prototype.toString.call(v) === '[object Date]') return fmt_(v, 'yyyy-MM-dd HH:mm:ss');
+  return v === null || v === undefined ? '' : String(v);
 }
 function dateStr_(v) {
   if (v === '' || v === null || v === undefined) return '';

@@ -6,10 +6,9 @@ let n = 0; const ok = (m) => console.log(`  ✓ ${++n}. ${m}`);
 const throws = (fn, re, m) => { assert.throws(fn, e => re.test(e.message), m); ok(m); };
 
 console.log('A. 資料結構');
-let p = G.checkData_();
-assert(!p.some(x => /缺少欄位/.test(x.msg))); ok('新範本欄位完整');
+let p;
 const added = G.setupSheets_();
-assert(added.length === 0); ok('setupSheets_ 不需要補欄位');
+ok('setupSheets_ 補上欄位：' + (added.join('；') || '不需要'));
 p = G.checkData_();
 assert(!p.some(x => x.level === '錯誤' && x.sheet !== '指令碼屬性'), JSON.stringify(p)); ok('補完後沒有錯誤，提醒 ' + p.length + ' 項：' + p.map(x => x.msg).join(' / '));
 
@@ -68,6 +67,42 @@ throws(() => G.adminSaveItem(adm.token, { code: 'H015-A01', freq: '每日', risk
 G.adminToggle(adm.token, 'items', 'SC-D02');
 assert(!G.getHome(mgr.token).items.some(i => i.code === 'SC-D02')); ok('停用項目後從檢查表消失');
 p = G.adminCheckData(adm.token); ok('資料檢查結果：' + p.map(x => `[${x.level}]${x.msg}`).join(' / '));
+
+const mgr2 = G.login({ pw: '12345', station: 'C04', name: '李丞芯' });
+const adm0 = G.login({ pw: '77777' });
+console.log('E2. SL-H015 季查核');
+const form = G.getAuditForm(off.token);
+assert(form.stations.length === 51 && form.items.length === 46 && form.items.filter(i => i.other).length === 4); ok(`查核表單：51 站、46 項（其中 4 個其他欄位），${form.quarter}`);
+throws(() => G.getAuditForm(mgr2.token), /權限/, '站長不能開查核表單');
+throws(() => G.submitAudit(off2.token, { station: 'C04', answers: [] }), /負責區域/, '黃瓊瑤不能查核中區站點');
+const mk = (over = {}) => form.items.map(i => Object.assign({ code: i.code, result: i.other ? 'na' : 'ok' }, over[i.code] || {}));
+throws(() => G.submitAudit(off.token, { station: 'C04', answers: mk().slice(1) }), /未填寫/, '漏填被拒絕');
+throws(() => G.submitAudit(off.token, { station: 'C04', answers: mk({ 'H015-B07': { result: 'ok' } }) }), /其他/, '其他欄位判定符合但沒寫內容被拒絕');
+const before = log.mails.length;
+const au = G.submitAudit(off.token, { station: 'C04', answers: mk({
+  'H015-C06': { result: 'na' }, 'H015-C12': { result: 'na' },
+  'H015-D06': { result: 'ng', note: '95 無鉛卸油口未上鎖', photo: PNG },
+  'H015-B07': { result: 'ok', other: '急救箱鑰匙放置位置標示' } }) });
+assert(au.pass === 90 && au.base === 93 && au.score === 96.8 && au.ngCount === 1 && au.naCount === 5); ok(`計分正確：符合 ${au.pass} ÷ 基準 ${au.base} × 100 ＝ ${au.score}`);
+assert(au.high === 1 && au.mailed && log.mails.length === before + 1 && /SL-H015/.test(log.mails.at(-1).body)); ok('不符合的 D06（3 分）列為高風險並寄出通知');
+const iss = G.listIssues(off.token).find(i => i.code === 'H015-D06');
+assert(iss && iss.src === 'SL-H015' && iss.risk === '高' && iss.title === '95 無鉛卸油口未上鎖'); ok('建立異常：' + iss.id + ' ' + iss.title);
+h = G.getHome(off.token);
+assert(h.audit.done === 1 && h.audit.total === 51 && h.stations.find(s => s.code === 'C04').auditedThisQuarter && h.audit.recent[0].score === 96.8); ok(`首頁本季查核進度 ${h.audit.done}/${h.audit.total}`);
+const det = sheets['檢查明細'].data.filter(r => r[0] === au.recordId);
+assert(det.length === 46); ok('查核明細寫入 46 列');
+throws(() => G.confirmAudit(off.token, au.recordId, ''), /姓名/, '站長姓名空白被拒絕');
+const cf = G.confirmAudit(off.token, au.recordId, '李丞芯'); assert(cf.confirmedBy === '李丞芯'); ok('站長確認查核結果');
+throws(() => G.confirmAudit(off.token, au.recordId, '李丞芯'), /已經確認/, '不能重複確認');
+const ex = G.exportAudit(off.token, au.recordId);
+assert(/^SL-H015查核表_台中站_\d{8}\.xlsx$/.test(ex.filename) && Buffer.from(ex.data, 'base64').toString() === 'PK-fake-xlsx'); ok('匯出 Excel：' + ex.filename);
+const xs = log.created.at(-1).sheet.data;
+assert(xs[3].join() === '項次,類別,檢查項目,配分,查核情況,得分,法令規定' && xs.length === 4 + 46 + 4); ok('匯出表格：表頭與 46 項明細');
+const tot = xs.slice(50, 53).map(r => r[5]); assert(tot[0] === 90 && tot[1] === 93 && tot[2] === 96.8); ok('匯出合計列：' + tot.join(' / '));
+assert(/李丞芯/.test(xs[2][3]) && /其他：急救箱鑰匙/.test(xs.find(r => r[0] === 'B07')[2])); ok('匯出含站長確認與其他欄位內容');
+assert(log.trashed.includes(log.created.at(-1).id)); ok('暫存試算表已刪除');
+throws(() => G.exportAudit(off2.token, au.recordId), /權限/, '黃瓊瑤不能匯出中區查核');
+assert(G.listAudits(adm0.token).length === 1); ok('管理員可看到查核紀錄');
 
 console.log('F. 工作表名稱');
 sheets['設定 '] = sheets['設定']; sheets['設定 '].name = '設定 '; delete sheets['設定'];
