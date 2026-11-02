@@ -31,7 +31,7 @@ function makeEnv(workbookPath, opts = {}) {
   }
   const sheets = {};
   Object.keys(wb).forEach(n => sheets[n] = new Sheet(n, wb[n]));
-  const ss = { getName: () => '測試資料庫', getSheets: () => Object.values(sheets), getSheetByName: n => sheets[n] || null, insertSheet: n => (sheets[n] = new Sheet(n, [])) };
+  const ss = { getId: () => 'ss1', getName: () => '測試資料庫', getSheets: () => Object.values(sheets), getSheetByName: n => sheets[n] || null, insertSheet: n => (sheets[n] = new Sheet(n, [])) };
 
   function fmtDate(d, tz, p) {
     const parts = {};
@@ -45,12 +45,14 @@ function makeEnv(workbookPath, opts = {}) {
     return {
       name,
       getFoldersByName: n => { const f = kids[n]; let used = false; return { hasNext: () => !!f && !used, next: () => { used = true; return f; } }; },
+      getId: () => 'folder-' + name,
       createFolder: n => (kids[n] = folder(n)),
       createFile: blob => { log.files.push({ folder: name, name: blob.name, size: blob.bytes.length }); return { getUrl: () => 'https://drive.google.com/file/d/' + crypto.randomBytes(6).toString('hex') + '/view' }; }
     };
   }
   const root = folder('巡檢照片');
   const cache = new Map();
+  const props = Object.assign({}, opts.props || { PHOTO_FOLDER_ID: 'root' });
   const ctx = {
     console,
     SpreadsheetApp: { getActiveSpreadsheet: () => ss, openById: () => ss, flush: () => {},
@@ -63,8 +65,8 @@ function makeEnv(workbookPath, opts = {}) {
     },
     CacheService: { getScriptCache: () => ({ get: k => cache.has(k) ? cache.get(k) : null, put: (k, v) => cache.set(k, v), remove: k => cache.delete(k) }) },
     LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
-    PropertiesService: { getScriptProperties: () => ({ getProperty: k => (opts.props || { PHOTO_FOLDER_ID: 'root' })[k] || null }) },
-    DriveApp: { getFolderById: () => root, getRootFolder: () => root, getFileById: id => ({ moveTo: () => log.moved.push(id), setTrashed: v => log.trashed.push(id) }) },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] || null, setProperty: (k, v) => { props[k] = v; } }) },
+    DriveApp: { getFolderById: () => root, getRootFolder: () => root, getFileById: id => ({ moveTo: () => log.moved.push(id), setTrashed: v => log.trashed.push(id), getParents: () => { let u = false; return { hasNext: () => !u, next: () => { u = true; return root; } }; } }) },
     MailApp: { getRemainingDailyQuota: () => 100, sendEmail: m => log.mails.push(m) },
     HtmlService: {
       createHtmlOutputFromFile: () => ({ setTitle() { return this; }, addMetaTag() { return this; } }),
@@ -77,6 +79,6 @@ function makeEnv(workbookPath, opts = {}) {
   };
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(SRC + '/Code.gs', 'utf8'), ctx, { filename: 'Code.gs' });
-  return { ctx, sheets, log };
+  return { ctx, sheets, log, props };
 }
 module.exports = { makeEnv };

@@ -5,7 +5,7 @@
  * 資料全部存在綁定的 Google 試算表；照片存在指令碼屬性 PHOTO_FOLDER_ID 指定的資料夾。
  *
  * 指令碼屬性（專案設定 → 指令碼屬性）：
- *   PHOTO_FOLDER_ID   「巡檢照片」資料夾 ID（必填）
+ *   PHOTO_FOLDER_ID   「巡檢照片」資料夾 ID（選填；沒填時第一次上傳照片會自動建立並記住）
  *   EXPORT_FOLDER_ID  「匯出暫存」資料夾 ID（第三階段匯出 Excel 使用）
  *   APP_NAME          App 名稱，預設「加油站巡檢」
  *   SHEET_ID          建議填寫：「加油站巡檢系統資料庫」網址 /d/ 後面那一段
@@ -269,10 +269,27 @@ function savePhoto_(dataUrl, stationCode, baseName) {
 }
 
 function photoFolder_(stationCode) {
-  const rootId = getProp_('PHOTO_FOLDER_ID');
-  if (!rootId) throw new Error('尚未設定指令碼屬性 PHOTO_FOLDER_ID，請聯絡系統管理員');
-  const root = DriveApp.getFolderById(rootId);
-  return childFolder_(childFolder_(root, stationCode), fmt_(new Date(), 'yyyy-MM'));
+  return childFolder_(childFolder_(photoRoot_(), stationCode), fmt_(new Date(), 'yyyy-MM'));
+}
+
+/**
+ * 照片根資料夾：優先用指令碼屬性 PHOTO_FOLDER_ID；沒有設定或資料夾已不存在時，
+ * 自動在試算表所在的資料夾建立（或沿用）「巡檢照片」資料夾，並把 ID 記到 PHOTO_FOLDER_ID。
+ */
+function photoRoot_() {
+  const props = PropertiesService.getScriptProperties();
+  const id = String(props.getProperty('PHOTO_FOLDER_ID') || '').trim();
+  if (id) {
+    try { return DriveApp.getFolderById(id); } catch (e) { console.warn('PHOTO_FOLDER_ID 無法開啟，改為自動建立：' + e); }
+  }
+  let parent;
+  try {
+    const parents = DriveApp.getFileById(ss_().getId()).getParents();
+    parent = parents.hasNext() ? parents.next() : DriveApp.getRootFolder();
+  } catch (e) { parent = DriveApp.getRootFolder(); }
+  const folder = childFolder_(parent, '巡檢照片');
+  props.setProperty('PHOTO_FOLDER_ID', folder.getId());
+  return folder;
 }
 
 function childFolder_(parent, name) {
@@ -748,7 +765,7 @@ function checkData_() {
   if (pws.some(p => !p)) add('錯誤', '設定', '登入密碼有空白');
   if (new Set(pws).size !== pws.length) add('錯誤', '設定', '三組登入密碼不能相同');
   if (pws.indexOf('12345') >= 0 || pws.indexOf('98765') >= 0 || pws.indexOf('77777') >= 0) add('提醒', '設定', '仍在使用初始密碼，正式上線前請修改');
-  if (!getProp_('PHOTO_FOLDER_ID')) add('錯誤', '指令碼屬性', '尚未設定 PHOTO_FOLDER_ID');
+  if (!getProp_('PHOTO_FOLDER_ID')) add('提醒', '指令碼屬性', '尚未設定 PHOTO_FOLDER_ID，第一次上傳照片時會在試算表所在資料夾自動建立「巡檢照片」');
   return out;
 }
 

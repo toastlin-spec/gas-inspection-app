@@ -1,6 +1,6 @@
 const { makeEnv } = require('./gasmock');
 const assert = require('assert');
-const { ctx: G, sheets, log } = makeEnv(__dirname + '/workbook.json');
+const { ctx: G, sheets, log, props } = makeEnv(__dirname + '/workbook.json', { props: {} });
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 let n = 0; const ok = (m) => console.log(`  ✓ ${++n}. ${m}`);
 const throws = (fn, re, m) => { assert.throws(fn, e => re.test(e.message), m); ok(m); };
@@ -30,7 +30,7 @@ assert(h.stations.length === 1 && h.items.length === 12 && !h.stations[0].daily)
 throws(() => G.submitCheck(mgr.token, { freq: '每日', answers: [{ code: 'SC-D01', result: 'ok' }] }), /未填寫/, '漏填被拒絕');
 throws(() => G.submitCheck(mgr.token, { freq: '每日', answers: [{ code: 'SC-D01', result: 'ng', note: ' ' }, { code: 'SC-D02', result: 'ok' }] }), /說明/, '異常未填說明被拒絕');
 let res = G.submitCheck(mgr.token, { freq: '每日', answers: [{ code: 'SC-D01', result: 'ng', note: '加油島 1 號地面油漬', photo: PNG }, { code: 'SC-D02', result: 'na' }] });
-assert(res.abnormal === 1 && res.high === 0 && log.files.length === 1); ok(`每日檢查送出：${res.recordId}，異常 1 項，照片存到 ${log.files[0].folder}`);
+assert(res.abnormal === 1 && res.high === 0 && log.files.length === 1 && props.PHOTO_FOLDER_ID === 'folder-巡檢照片'); ok('未設定 PHOTO_FOLDER_ID 時自動建立「巡檢照片」並記住 ID'); ok(`每日檢查送出：${res.recordId}，異常 1 項，照片存到 ${log.files[0].folder}`);
 h = G.getHome(mgr.token); assert(h.stations[0].daily && h.counts.open === 1); ok('首頁更新：今日已完成、未結案 1 件');
 const issueSheet = sheets['異常追蹤'];
 const hdr = issueSheet.data[0], last = issueSheet.data[issueSheet.getLastRow() - 1];
