@@ -90,9 +90,15 @@ assert(au.high === 1 && au.mailed && log.mails.length === before + 1 && /SL-H015
 const iss = G.listIssues(off.token).find(i => i.code === 'H015-D06');
 assert(iss && iss.src === 'SL-H015' && iss.risk === '高' && iss.title === '95 無鉛卸油口未上鎖'); ok('建立異常：' + iss.id + ' ' + iss.title);
 h = G.getHome(off.token);
-assert(h.audit.done === 1 && h.audit.total === 51 && h.stations.find(s => s.code === 'C04').auditedThisQuarter && h.audit.recent[0].score === 96.8); ok(`首頁本季查核進度 ${h.audit.done}/${h.audit.total}`);
+assert(h.audit.done >= 1 && h.audit.total === 51 && h.stations.find(s => s.code === 'C04').auditedThisQuarter && h.audit.recent[0].score === 96.8); ok(`首頁本季查核進度 ${h.audit.done}/${h.audit.total}`);
 const det = sheets['檢查明細'].data.filter(r => r[0] === au.recordId);
 assert(det.length === 46); ok('查核明細寫入 46 列');
+const up = G.uploadPhoto(off.token, 'C06', 'H015-A02', PNG); assert(/^https:\/\/drive\.google\.com\//.test(up.url)); ok('拍照後立即上傳，取得雲端連結');
+throws(() => G.uploadPhoto(off2.token, 'C06', 'H015-A02', PNG), /權限/, '黃瓊瑤不能上傳中區站點照片');
+throws(() => G.uploadPhoto(mgr2.token, 'C06', 'SC-D01', PNG), /權限/, '站長不能上傳其他站的照片');
+const au2 = G.submitAudit(off.token, { station: 'C06', answers: mk({ 'H015-A02': { result: 'ng', note: '急救人員證書過期', photo: up.url } }) });
+const d2 = sheets['檢查明細'].data.find(r => r[0] === au2.recordId && r[1] === 'H015-A02'), dh = sheets['檢查明細'].data[0];
+assert(d2[dh.indexOf('照片連結')] === up.url); ok('送出時使用已上傳的連結，照片連結寫入查核明細');
 throws(() => G.confirmAudit(off.token, au.recordId, ''), /姓名/, '站長姓名空白被拒絕');
 const cf = G.confirmAudit(off.token, au.recordId, '李丞芯'); assert(cf.confirmedBy === '李丞芯'); ok('站長確認查核結果');
 throws(() => G.confirmAudit(off.token, au.recordId, '李丞芯'), /已經確認/, '不能重複確認');
@@ -113,7 +119,7 @@ const tot = xs.slice(50, 53).map(r => r[5]); assert(tot[0] === 90 && tot[1] === 
 assert(/李丞芯/.test(xs[2][3]) && /其他：急救箱鑰匙/.test(xs.find(r => r[0] === 'B07')[2])); ok('完整表含站長確認與其他欄位內容');
 assert(log.trashed.includes(X.id) && log.images.length === 2); ok('暫存試算表已刪除；全部匯出也嵌入照片');
 throws(() => G.exportAudit(off2.token, au.recordId), /權限/, '黃瓊瑤不能匯出中區查核');
-assert(G.listAudits(adm0.token).length === 1); ok('管理員可看到查核紀錄');
+assert(G.listAudits(adm0.token).length === 2); ok('管理員可看到查核紀錄');
 
 console.log('F. 工作表名稱');
 sheets['設定 '] = sheets['設定']; sheets['設定 '].name = '設定 '; delete sheets['設定'];

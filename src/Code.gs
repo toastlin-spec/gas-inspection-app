@@ -257,7 +257,7 @@ function submitCheck(token, payload) {
   const photos = {};
   items.forEach(i => {
     const a = ans[i.code];
-    if (a.result === 'ng' && a.photo) photos[i.code] = savePhoto_(a.photo, station.code, recordId + '_' + i.code);
+    if (a.result === 'ng' && a.photo) photos[i.code] = photoValue_(a.photo, station.code, recordId + '_' + i.code);
   });
 
   const lock = LockService.getScriptLock();
@@ -303,6 +303,29 @@ function submitCheck(token, payload) {
     recordId: recordId, freq: freq, total: items.length, abnormal: issueRows.length,
     high: issueRows.filter(r => r['風險等級'] === '高').length, mailed: mailed
   };
+}
+
+/**
+ * 拍照後立即上傳：回傳雲端硬碟連結，畫面草稿只保存連結，切換分頁或重新整理都不會遺失照片。
+ * 站長只能上傳自己的站；安保專員只能上傳負責區域的站。
+ */
+function uploadPhoto(token, stationCode, itemCode, dataUrl) {
+  const sess = session_(token, ['站長', '安保專員']);
+  const st = scopeStations_(sess).find(s => s.code === String(stationCode || ''));
+  if (!st) throw new Error('沒有權限上傳這個站點的照片');
+  const name = (sess.role === '站長' ? 'CK' : 'AU') + '-' + fmt_(new Date(), 'yyyyMMdd-HHmmss') + '-' + st.code + '_' + clean_(itemCode, 20);
+  const url = savePhoto_(dataUrl, st.code, name);
+  if (!url) throw new Error('照片格式不正確，請重新拍攝');
+  return { url: url };
+}
+
+/** 送出時的照片欄位：已上傳的雲端硬碟連結直接使用；舊版畫面傳來的 data URL 則先存檔。 */
+function photoValue_(v, stationCode, baseName) {
+  const text = String(v || '');
+  if (!text) return '';
+  if (text.indexOf('https://drive.google.com/') === 0) return text;
+  if (text.indexOf('data:image/') === 0) return savePhoto_(text, stationCode, baseName);
+  return '';
 }
 
 function savePhoto_(dataUrl, stationCode, baseName) {
@@ -427,7 +450,7 @@ function submitAudit(token, payload) {
   const photos = {};
   items.forEach(i => {
     const a = ans[i.code];
-    if (a.result === 'ng' && a.photo) photos[i.code] = savePhoto_(a.photo, station.code, recordId + '_' + i.code);
+    if (a.result === 'ng' && a.photo) photos[i.code] = photoValue_(a.photo, station.code, recordId + '_' + i.code);
   });
 
   const lock = LockService.getScriptLock();

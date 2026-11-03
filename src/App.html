@@ -1,6 +1,6 @@
 /* 加油站巡檢 App — 畫面程式
  * 這個檔案由 Code.gs 以原始內容讀取後編碼傳給畫面執行，請勿加上 <script> 標籤。 */
-window.__appVersion='1.2.0';
+window.__appVersion='1.2.1';
 (function(){var st=document.createElement('style');st.textContent='.choice{display:flex;flex-direction:column;gap:4px;text-align:left;width:100%;border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:14px 16px;cursor:pointer}.choice:hover{border-color:var(--accent)}.choice:disabled{opacity:.6;cursor:wait}';document.head.appendChild(st)})();
 const ICON={
  home:'<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
@@ -23,9 +23,9 @@ const draft={get(k){try{return JSON.parse(localStorage.getItem(k))}catch(e){retu
 
 const S={token:null,sess:null,home:null,
  login:{step:1,role:null,pw:'',stations:[],officers:[],station:'',name:'',officer:'',err:''},
- check:{freq:'每日',ans:{},note:{},photo:{},tried:false,result:null},
+ check:{freq:'每日',ans:{},note:{},photo:{},purl:{},tried:false,result:null},
  audit:{station:'',ans:{},other:{},note:{},photo:{},tried:false,result:null,openCats:null},auditForm:null,
- issues:null,issueFilter:'未結案',admin:null,manageTab:'站點',stRegion:'全部',itemForm:'自主檢查',problems:null,sheet:null,busy:0};
+ uploading:{},issues:null,issueFilter:'未結案',admin:null,manageTab:'站點',stRegion:'全部',itemForm:'自主檢查',problems:null,sheet:null,busy:0};
 
 const TABS={
  home:{label:'首頁',icon:'home',roles:['站長','安保專員','系統管理員']},
@@ -52,7 +52,7 @@ function setBusy(d){S.busy=Math.max(0,S.busy+d);document.getElementById('busy').
 function toastT(m){const t=document.getElementById('toast');t.textContent=m;t.hidden=false;clearTimeout(t._h);t._h=setTimeout(()=>t.hidden=true,3000)}
 function resetAll(){S.token=null;S.sess=null;S.home=null;S.issues=null;S.admin=null;S.problems=null;S.sheet=null;
  S.login={step:1,role:null,pw:'',stations:[],officers:[],station:'',name:'',officer:'',err:''};
- S.check={freq:'每日',ans:{},note:{},photo:{},tried:false,result:null};store.del('gi_token');store.del('gi_sess')}
+ S.check={freq:'每日',ans:{},note:{},photo:{},purl:{},tried:false,result:null};store.del('gi_token');store.del('gi_sess')}
 async function loadHome(){S.home=await call('getHome',S.token);S.sess=S.home.session;return S.home}
 
 const route=()=>{let r=(location.hash||'').slice(1);if(!S.sess||!TABS[r]||!TABS[r].roles.includes(S.sess.role))r='home';return r};
@@ -76,14 +76,15 @@ async function onRoute(){
 function groupBy(arr,f){const m=new Map();arr.forEach(x=>{const k=f(x);if(!m.has(k))m.set(k,[]);m.get(k).push(x)});return m}
 function stationOptions(list,sel){return REGIONS.map(r=>{const g=list.filter(s=>s.region===r);return g.length?`<optgroup label="${r}">${g.map(s=>`<option value="${esc(s.code)}" ${s.code===sel?'selected':''}>${esc(s.group)}・${esc(s.name)}</option>`).join('')}</optgroup>`:''}).join('')}
 const mgrName=s=>String(s||'').split('（兼）').join('').split('(兼)').join('').trim();
-function freshAudit(){return{station:'',ans:{},other:{},note:{},sugg:{},photo:{},tried:false,result:null,openCats:null}}
+function freshAudit(){return{station:'',ans:{},other:{},note:{},sugg:{},photo:{},purl:{},tried:false,result:null,openCats:null}}
 const auditKey=()=>S.auditForm&&S.audit.station?`gi_audit_${S.audit.station}_${S.auditForm.today}`:'';
-function saveAuditDraft(){const k=auditKey();if(k)draft.set(k,{ans:S.audit.ans,other:S.audit.other,note:S.audit.note,sugg:S.audit.sugg})}
+function saveAuditDraft(){const k=auditKey();if(k){draft.set('gi_audit_last',S.audit.station);draft.set(k,{ans:S.audit.ans,other:S.audit.other,note:S.audit.note,sugg:S.audit.sugg,purl:S.audit.purl})}}
 function loadAuditDraft(){const F=S.auditForm,a=S.audit;if(!F)return;const k=auditKey(),d=k&&draft.get(k);
  const def={};F.items.forEach(i=>{if(i.other)def[i.code]='na'});
- a.ans=d&&d.ans||def;a.other=d&&d.other||{};a.note=d&&d.note||{};a.sugg=d&&d.sugg||{};a.photo={};a.tried=false;a.openCats=null}
+ a.ans=d&&d.ans||def;a.other=d&&d.other||{};a.note=d&&d.note||{};a.sugg=d&&d.sugg||{};a.purl=d&&d.purl||{};a.photo={};a.tried=false;a.openCats=null}
 function pickAuditStation(){const F=S.auditForm,a=S.audit;if(!F||!F.stations.length)return;
  if(a.station&&F.stations.some(s=>s.code===a.station))return;
+ const last=draft.get('gi_audit_last');if(last&&F.stations.some(s=>s.code===last)){a.station=last;return}
  const next=F.stations.find(s=>!s.auditedThisQuarter)||F.stations[0];a.station=next.code}
 function auditCalc(){const F=S.auditForm,a=S.audit;let pass=0,total=0,na=0,ok=0,ng=0,nac=0,todo=0;
  F.items.forEach(i=>{const v=a.ans[i.code],pt=Number(i.pts)||0;total+=pt;if(v==='ok'){pass+=pt;ok++}else if(v==='na'){na+=pt;nac++}else if(v==='ng')ng++;else todo++});
@@ -91,10 +92,16 @@ function auditCalc(){const F=S.auditForm,a=S.audit;let pass=0,total=0,na=0,ok=0,
 function downloadBase64(name,b64){const bin=atob(b64),u=new Uint8Array(bin.length);for(let i=0;i!==bin.length;i++)u[i]=bin.charCodeAt(i);
  const url=URL.createObjectURL(new Blob([u],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
  const el=document.createElement('a');el.href=url;el.download=name;document.body.appendChild(el);el.click();setTimeout(()=>{URL.revokeObjectURL(url);el.remove()},1500);toastT('已下載 '+name)}
+function photoBox(code,thumb,url,id){
+ const up=S.uploading[id];
+ return `${thumb?`<img class="thumb" src="${thumb}" alt="照片">`:(url?`<a class="small" href="${esc(url)}" target="_blank" rel="noopener">${ic('camera','s')} 照片已上傳</a>`:'')}`+
+  (up?'<span class="small muted">照片上傳中…</span>':(url?'<span class="small" style="color:var(--accent)">已上傳</span>':(thumb?'<span class="small" style="color:var(--bad)">上傳失敗，請重拍</span>':'')))+
+  ((thumb||url)&&!up?`<button class="btn sm ghost" data-act="rmPhoto2" data-id="${esc(id)}" data-code="${esc(code)}">移除</button>`:'');
+}
 const fmtScore=v=>v===null||v===undefined||v===''?'—':Number(v).toFixed(1);
 const draftKey=()=>S.home&&S.sess?`gi_draft_${S.sess.station}_${S.check.freq}_${S.home.today}`:'';
-function saveDraft(){const k=draftKey();if(k)draft.set(k,{ans:S.check.ans,note:S.check.note})}
-function loadDraft(){const k=draftKey(),d=k&&draft.get(k);S.check.ans=d&&d.ans||{};S.check.note=d&&d.note||{};S.check.photo={};S.check.tried=false;S.check.result=null}
+function saveDraft(){const k=draftKey();if(k)draft.set(k,{ans:S.check.ans,note:S.check.note,purl:S.check.purl})}
+function loadDraft(){const k=draftKey(),d=k&&draft.get(k);S.check.ans=d&&d.ans||{};S.check.note=d&&d.note||{};S.check.purl=d&&d.purl||{};S.check.photo={};S.check.tried=false;S.check.result=null}
 
 /* ---------- 登入 ---------- */
 function vLogin(){
@@ -177,7 +184,7 @@ function vCheck(){
      <button class="ng" aria-pressed="${v==='ng'}" data-act="ans" data-code="${esc(i.code)}" data-v="ng">異常</button>
      <button class="na" aria-pressed="${v==='na'}" data-act="ans" data-code="${esc(i.code)}" data-v="na">不適用</button></div>
     ${v==='ng'?`<div class="field"><label for="n-${esc(i.code)}">異常說明（必填）</label><textarea id="n-${esc(i.code)}" data-note="${esc(i.code)}" maxlength="500" placeholder="例如：2 號加油島滅火器壓力指針在紅區">${esc(c.note[i.code]||'')}</textarea></div>
-     <div class="photo">${c.photo[i.code]?`<img class="thumb" src="${c.photo[i.code]}" alt="異常照片"><button class="btn sm ghost" data-act="rmPhoto" data-code="${esc(i.code)}">移除</button>`:''}<label class="btn" for="p-${esc(i.code)}">${ic('camera','s')}${c.photo[i.code]?'重拍':'拍照'}</label><input type="file" accept="image/*" capture="environment" id="p-${esc(i.code)}" data-photo="${esc(i.code)}"><span class="small muted">${i.risk==='高'?'高風險：送出後立即通知':'改善期限 '+(H.riskDays[i.risk]||7)+' 天'}</span></div>
+     <div class="photo">${photoBox(i.code,c.photo[i.code],c.purl[i.code],'c:'+i.code)}<label class="btn" for="p-${esc(i.code)}">${ic('camera','s')}${(c.photo[i.code]||c.purl[i.code])?'重拍':'拍照'}</label><input type="file" accept="image/*" capture="environment" id="p-${esc(i.code)}" data-photo="${esc(i.code)}"><span class="small muted">${i.risk==='高'?'高風險：送出後立即通知':'改善期限 '+(H.riskDays[i.risk]||7)+' 天'}</span></div>
      ${err?'<p class="msg">請填寫異常說明</p>':''}`:''}
     ${err&&!v?'<p class="msg" style="color:var(--warn)">此項尚未選擇</p>':''}
     ${i.law?`<div class="law">依據：${esc(i.law)}</div>`:''}</div>`;
@@ -216,7 +223,7 @@ function vAudit(){
      <button class="na" aria-pressed="${v==='na'}" data-act="aans" data-code="${esc(i.code)}" data-v="na">不適用</button></div>
     ${v==='ng'?`<div class="field"><label for="an-${esc(i.code)}">不符合說明（會成為異常內容）</label><textarea id="an-${esc(i.code)}" data-anote="${esc(i.code)}" maxlength="500" placeholder="例如：95 無鉛卸油口未上鎖">${esc(a.note[i.code]||'')}</textarea></div>
      <div class="field"><label for="as-${esc(i.code)}">改善建議（已帶入建議內容，可修改）</label><textarea id="as-${esc(i.code)}" data-asugg="${esc(i.code)}" maxlength="500">${esc(a.sugg[i.code]!==undefined?a.sugg[i.code]:(i.suggest||''))}</textarea></div>
-     <div class="photo">${a.photo[i.code]?`<img class="thumb" src="${a.photo[i.code]}" alt="不符合照片"><button class="btn sm ghost" data-act="rmAPhoto" data-code="${esc(i.code)}">移除</button>`:''}<label class="btn" for="ap-${esc(i.code)}">${ic('camera','s')}${a.photo[i.code]?'重拍':'拍照'}</label><input type="file" accept="image/*" capture="environment" id="ap-${esc(i.code)}" data-aphoto="${esc(i.code)}"><span class="small muted">風險 <span class="risk ${esc(i.risk)}">${esc(i.risk)}</span>・改善期限 ${F.riskDays[i.risk]||7} 天</span></div>`:''}
+     <div class="photo">${photoBox(i.code,a.photo[i.code],a.purl[i.code],'a:'+i.code)}<label class="btn" for="ap-${esc(i.code)}">${ic('camera','s')}${(a.photo[i.code]||a.purl[i.code])?'重拍':'拍照'}</label><input type="file" accept="image/*" capture="environment" id="ap-${esc(i.code)}" data-aphoto="${esc(i.code)}"><span class="small muted">風險 <span class="risk ${esc(i.risk)}">${esc(i.risk)}</span>・改善期限 ${F.riskDays[i.risk]||7} 天</span></div>`:''}
     ${err?`<p class="msg" style="color:var(--warn)">${v?'請填寫其他項目內容':'此項尚未選擇'}</p>`:''}
     ${i.law?`<div class="law">${esc(i.law)}</div>`:''}</div>`;
   }
@@ -356,6 +363,19 @@ function compress(file){return new Promise((res,rej)=>{const url=URL.createObjec
  img.onload=()=>{const max=1280,k=Math.min(1,max/Math.max(img.naturalWidth,img.naturalHeight));const c=document.createElement('canvas');c.width=Math.round(img.naturalWidth*k);c.height=Math.round(img.naturalHeight*k);c.getContext('2d').drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(url);res(c.toDataURL('image/jpeg',0.72))};
  img.onerror=()=>{URL.revokeObjectURL(url);rej(new Error('無法讀取這張照片，請重新拍攝'))};img.src=url})}
 
+/* ---------- 拍照：壓縮 → 立即上傳 → 草稿只記連結 ---------- */
+function rerenderKeep(o){const y=window.scrollY;if(o===S.audit)S.audit.openCats=[...document.querySelectorAll('details.sec[open]')].map(x=>x.dataset.cat);render();window.scrollTo({top:y})}
+async function takePhoto(o,code,station,prefix,file){
+ const id=prefix+code;
+ try{o.photo[code]=await compress(file)}catch(err){toastT(err.message);return}
+ delete o.purl[code];S.uploading[id]=1;rerenderKeep(o);
+ try{const r=await api('uploadPhoto',S.token,station,code,o.photo[code]);o.purl[code]=r.url;toastT('照片已上傳')}
+ catch(err){const m=String(err&&err.message||err);if(m.indexOf('SESSION_EXPIRED')>=0){toastT('登入已逾時，請重新登入');resetAll();render();return}toastT('照片上傳失敗：'+stripErr(m))}
+ finally{delete S.uploading[id]}
+ if(o===S.audit)saveAuditDraft();else saveDraft();
+ rerenderKeep(o);
+}
+
 /* ---------- 互動 ---------- */
 document.addEventListener('click',async e=>{
  const el=e.target.closest('[data-act]');if(!el||el.disabled)return;
@@ -368,28 +388,31 @@ document.addEventListener('click',async e=>{
  if(A==='enterOfficer'){if(!S.login.officer){S.login.err='請先選擇你的姓名';render();return}await doLogin({pw:S.login.pw,officer:S.login.officer});return}
  if(A==='startCheck'){S.check.freq=d.freq;loadDraft();go('check');return}
  if(A==='freq'){S.check.freq=d.freq;loadDraft();render();return}
- if(A==='ans'){S.check.ans[d.code]=S.check.ans[d.code]===d.v?undefined:d.v;if(S.check.ans[d.code]!=='ng')delete S.check.photo[d.code];saveDraft();render();if(d.v==='ng'){const t=document.getElementById('n-'+d.code);t&&t.focus({preventScroll:true})}return}
- if(A==='rmPhoto'){delete S.check.photo[d.code];render();return}
+ if(A==='ans'){S.check.ans[d.code]=S.check.ans[d.code]===d.v?undefined:d.v;if(S.check.ans[d.code]!=='ng'){delete S.check.photo[d.code];delete S.check.purl[d.code]}saveDraft();render();if(d.v==='ng'){const t=document.getElementById('n-'+d.code);t&&t.focus({preventScroll:true})}return}
+ if(A==='rmPhoto2'){const o=d.id.indexOf('a:')===0?S.audit:S.check;delete o.photo[d.code];delete o.purl[d.code];
+  if(o===S.audit){saveAuditDraft();S.audit.openCats=[...document.querySelectorAll('details.sec[open]')].map(x=>x.dataset.cat)}else saveDraft();
+  const y=window.scrollY;render();window.scrollTo({top:y});return}
  if(A==='submitCheck'){
+  if(Object.keys(S.uploading).length){toastT('照片還在上傳，請稍候再送出');return}
   const c=S.check,list=S.home.items.filter(i=>i.freq===c.freq);
   const bad=list.filter(i=>!c.ans[i.code]||(c.ans[i.code]==='ng'&&!(c.note[i.code]||'').trim()));
   if(bad.length){c.tried=true;render();const t=document.getElementById('it-'+bad[0].code);t&&t.scrollIntoView({block:'center',behavior:'smooth'});toastT(`還有 ${bad.length} 項需要完成`);return}
-  const answers=list.map(i=>({code:i.code,result:c.ans[i.code],note:c.ans[i.code]==='ng'?c.note[i.code]:'',photo:c.ans[i.code]==='ng'?(c.photo[i.code]||''):''}));
+  const answers=list.map(i=>({code:i.code,result:c.ans[i.code],note:c.ans[i.code]==='ng'?c.note[i.code]:'',photo:c.ans[i.code]==='ng'?(c.purl[i.code]||''):''}));
   const R=await call('submitCheck',S.token,{freq:c.freq,answers});
-  draft.del(draftKey());c.result=R;c.ans={};c.note={};c.photo={};c.tried=false;
+  draft.del(draftKey());c.result=R;c.ans={};c.note={};c.photo={};c.purl={};c.tried=false;
   try{await loadHome()}catch(_){}
   render();window.scrollTo({top:0});return}
- if(A==='aans'){const a=S.audit;a.ans[d.code]=a.ans[d.code]===d.v?undefined:d.v;if(a.ans[d.code]!=='ng')delete a.photo[d.code];
+ if(A==='aans'){const a=S.audit;a.ans[d.code]=a.ans[d.code]===d.v?undefined:d.v;if(a.ans[d.code]!=='ng'){delete a.photo[d.code];delete a.purl[d.code]}
   a.openCats=[...document.querySelectorAll('details.sec[open]')].map(x=>x.dataset.cat);saveAuditDraft();const y=window.scrollY;render();window.scrollTo({top:y});
   if(d.v==='ng'&&a.ans[d.code]==='ng'){const t=document.getElementById('an-'+d.code);t&&t.focus({preventScroll:true})}return}
- if(A==='rmAPhoto'){delete S.audit.photo[d.code];const y=window.scrollY;S.audit.openCats=[...document.querySelectorAll('details.sec[open]')].map(x=>x.dataset.cat);render();window.scrollTo({top:y});return}
  if(A==='submitAudit'){
+  if(Object.keys(S.uploading).length){toastT('照片還在上傳，請稍候再送出');return}
   const F=S.auditForm,a=S.audit;
   const bad=F.items.filter(i=>!a.ans[i.code]||(i.other&&a.ans[i.code]!=='na'&&!(a.other[i.code]||'').trim()));
   if(bad.length){a.tried=true;a.openCats=[bad[0].cat];render();const t=document.getElementById('it-'+bad[0].code);t&&t.scrollIntoView({block:'center',behavior:'smooth'});toastT(`還有 ${bad.length} 項需要完成`);return}
-  const answers=F.items.map(i=>({code:i.code,result:a.ans[i.code],note:a.ans[i.code]==='ng'?(a.note[i.code]||''):'',suggest:a.ans[i.code]==='ng'?(a.sugg[i.code]!==undefined?a.sugg[i.code]:(i.suggest||'')):'',other:i.other?(a.other[i.code]||''):'',photo:a.ans[i.code]==='ng'?(a.photo[i.code]||''):''}));
+  const answers=F.items.map(i=>({code:i.code,result:a.ans[i.code],note:a.ans[i.code]==='ng'?(a.note[i.code]||''):'',suggest:a.ans[i.code]==='ng'?(a.sugg[i.code]!==undefined?a.sugg[i.code]:(i.suggest||'')):'',other:i.other?(a.other[i.code]||''):'',photo:a.ans[i.code]==='ng'?(a.purl[i.code]||''):''}));
   const R=await call('submitAudit',S.token,{station:a.station,answers});
-  draft.del(auditKey());a.result=Object.assign(R,{confirmedBy:''});render();window.scrollTo({top:0});return}
+  draft.del(auditKey());draft.del('gi_audit_last');a.result=Object.assign(R,{confirmedBy:''});render();window.scrollTo({top:0});return}
  if(A==='newAudit'){const prev=S.audit.result&&S.audit.result.station.code;S.audit=freshAudit();S.auditForm=await call('getAuditForm',S.token);
   const next=S.auditForm.stations.find(x=>!x.auditedThisQuarter&&x.code!==prev)||S.auditForm.stations[0];S.audit.station=next?next.code:'';loadAuditDraft();render();window.scrollTo({top:0});return}
  if(A==='exportAudit'){S.sheet={type:'export',key:d.id};render();return}
@@ -415,11 +438,10 @@ document.addEventListener('input',e=>{const t=e.target;
  if(t.dataset.asugg){S.audit.sugg[t.dataset.asugg]=t.value;saveAuditDraft()}});
 document.addEventListener('change',async e=>{const t=e.target;
  if(t.id==='lgSt'){S.login.station=t.value;const s=S.login.stations.find(x=>x.code===t.value);S.login.name=mgrName(s&&s.mgr);render();return}
- if(t.id==='auditSt'){saveAuditDraft();S.audit.station=t.value;loadAuditDraft();render();return}
+ if(t.id==='auditSt'){saveAuditDraft();S.audit.station=t.value;draft.set('gi_audit_last',t.value);loadAuditDraft();render();return}
  const f=t.files&&t.files[0];
- if(f&&t.dataset.aphoto){try{setBusy(1);S.audit.photo[t.dataset.aphoto]=await compress(f)}catch(err){toastT(err.message)}finally{setBusy(-1)}
-  const y=window.scrollY;S.audit.openCats=[...document.querySelectorAll('details.sec[open]')].map(x=>x.dataset.cat);render();window.scrollTo({top:y});return}
- if(f&&t.dataset.photo){try{setBusy(1);S.check.photo[t.dataset.photo]=await compress(f)}catch(err){toastT(err.message)}finally{setBusy(-1)}render()}
+ if(f&&t.dataset.aphoto){await takePhoto(S.audit,t.dataset.aphoto,S.audit.station,'a:',f);return}
+ if(f&&t.dataset.photo){await takePhoto(S.check,t.dataset.photo,S.sess.station,'c:',f);return}
 });
 document.addEventListener('submit',async e=>{
  e.preventDefault();const f=e.target.dataset.form,v=id=>{const el=document.getElementById(id);return el?el.value.trim():''};
