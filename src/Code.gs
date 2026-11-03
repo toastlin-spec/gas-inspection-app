@@ -19,13 +19,60 @@ const MAX_PHOTO_CHARS = 4 * 1024 * 1024;
 const AUDIT_FORM = 'SL-H015查核表';
 const AUDIT_LABEL = { ok: '符合', ng: '不符合', na: '不適用' };
 
+/** SL-H015 各項目的預設改善建議；試算表「檢查項目」的「改善建議」欄有填時以試算表為準。 */
+const DEFAULT_SUGGEST = {
+  'H015-A01': '指派人員參加丙級勞工安全衛生業務主管訓練並取得證書，證書影本存站備查。',
+  'H015-A02': '每班至少一名人員完成急救人員訓練，排班表標示急救人員，證書影本存站備查。',
+  'H015-A03': '每班指派一名人員完成有機溶劑作業主管訓練，證書影本存站備查。',
+  'H015-A04': '相關人員應持有效之道路危險物品運送人員訓練證明，到期前安排複訓。',
+  'H015-B01': '補辦新進人員體格檢查及在職人員定期健康檢查，報告依規定保存。',
+  'H015-B02': '依規定配置急救箱及藥品器材，每月清點補充，過期藥品立即更換。',
+  'H015-B03': '補辦新進及變更職務人員 3 小時以上安全衛生教育訓練（危險物作業另加 3 小時），保存簽到表與教材。',
+  'H015-B04': '安排在職人員每年 1 小時以上安全衛生教育訓練（危險物作業另加 1 小時），保存紀錄。',
+  'H015-B05': '訂定或修訂安全衛生工作守則，公告並使員工知悉。',
+  'H015-B06': '於明顯易見處公告受理勞工申訴之機構、人員、範圍、格式及申訴程序。',
+  'H015-C01': '清除通道油漬、積水與障礙物，修補破損地面或階梯，必要處加設止滑措施。',
+  'H015-C02': '安全門於工作期間不得上鎖，移除安全門及安全梯通道堆放物品。',
+  'H015-C03': '更換故障燈具，並測試緊急照明可正常點亮。',
+  'H015-C04': '維持主要人行道寬度 1 公尺以上，補設安全門、安全梯明顯標示。',
+  'H015-C05': '空壓機傳動帶加裝護罩及接地，完成年度定期檢查並保存紀錄。',
+  'H015-C06': '洗衣機、脫水機加裝覆蓋及連鎖裝置，未改善前停止使用。',
+  'H015-C07': '配電盤加裝分格板（內板），並標示各開關迴路用途。',
+  'H015-C08': '移除發電室、變電室、受電室內與電路無關之物品，保持淨空。',
+  'H015-C09': '電氣室門口張貼「非相關工作人員不得任意進入」標示。',
+  'H015-C10': '電氣設備旁張貼「不得以濕手操作開關」「非職權範圍，不得擅自操作」標示。',
+  'H015-C11': '空壓機、馬達等低壓用電設備加接地，並量測接地電阻。',
+  'H015-C12': '洗車機、高壓噴槍及戶外電氣設備迴路加裝漏電斷路器，每月按測試鈕確認動作。',
+  'H015-C13': '營業室前張貼有機溶劑作業注意事項公告板，並落實作業前檢點。',
+  'H015-D01': '營業室內之輕質揮發性小包裝油品移至規定儲存場所。',
+  'H015-D02': '儲油槽區及加油區補設紅底白字金屬板警戒標誌（嚴禁煙火、熄火加油）。',
+  'H015-D03': '於明顯處補正營業主體、站名、營業時間、售油種類、油品價格及供油廠商標示。',
+  'H015-D04': '補設出入口方向標誌、地面白色箭頭標線及雨棚高度標誌。',
+  'H015-D05': '重新漆劃儲油槽卸油區地面黃線。',
+  'H015-D06': '卸油口依油品漆上不同顏色或使用不同口徑，不使用時一律加鎖。',
+  'H015-D07': '移除第一種及第二種危險場所內之非防爆電氣設備，或更換為適用防爆等級設備。',
+  'H015-D08': '於卸油口、雨棚柱補貼汽油、超級柴油危害標示公告板。',
+  'H015-D09': '委請專業廠商檢測避雷設備，缺損處修復並保存檢測紀錄。',
+  'H015-E01': '採樣瓶依危害通識規定加貼危害圖示及標示內容。',
+  'H015-E02': '安全資料表放置於工作場所易取得處，逾三年者更新版本。',
+  'H015-E03': '訂定危害通識計畫並製作危害物質清單，定期更新。',
+  'H015-F01': '每月實施防火避難設施自行檢查，並保存檢查紀錄。',
+  'H015-F02': '更換過期或外觀損傷之滅火器，建立滅火器到期清冊每月追蹤。',
+  'H015-F03': '更換故障之緊急照明燈及避難指示燈，每月測試並記錄。',
+  'H015-F04': '依現況更新平面配置圖，或將防火避難設施恢復至圖面位置。',
+  'H015-F05': '滅火器放置於明顯易取用處，補設紅底白字（長邊 24 公分、短邊 8 公分以上）標識。',
+  'H015-F06': '調整滅火器懸掛高度：18 公斤以上上端距地 1 公尺以下，未滿 18 公斤 1.5 公尺以下。',
+  'H015-G01': '依能源局「加油站營運設備自行安全檢查手冊」確實填寫，紀錄保存 1 年以上。'
+};
+const OTHER_SUGGEST = '依現場缺失內容限期改善，完成後拍照回報。';
+
 const REQUIRED_HEADERS = {
   '站點': ['站點代碼', '站名', '區域', '組別', '站長', '站長Email', '啟用', '備註'],
   '人員': ['姓名', '角色', '負責區域', 'Email', '啟用', '備註'],
   '檢查項目': ['項目代碼', '表單類型', '版本', '頻率', '類別', '檢查內容', '判定標準', '法規依據', '風險等級', '配分', '排序', '啟用'],
   '檢查紀錄': ['紀錄編號', '表單類型', '版本', '站點代碼', '頻率', '檢查日期', '填報人', '送出時間', '異常數', '得分', '站長確認時間', '站長確認人'],
-  '檢查明細': ['紀錄編號', '項目代碼', '結果', '得分', '說明', '照片連結'],
-  '異常追蹤': ['異常編號', '紀錄編號', '站點代碼', '來源', '項目代碼', '異常說明', '異常照片', '風險等級', '狀態', '建立日期', '改善期限', '處置說明', '改善後照片', '結案人', '結案日期', '處置紀錄'],
+  '檢查明細': ['紀錄編號', '項目代碼', '結果', '得分', '說明', '照片連結', '改善建議'],
+  '異常追蹤': ['異常編號', '紀錄編號', '站點代碼', '來源', '項目代碼', '異常說明', '異常照片', '風險等級', '狀態', '建立日期', '改善期限', '處置說明', '改善後照片', '結案人', '結案日期', '處置紀錄', '改善建議'],
   '設定': ['參數', '值', '單位', '說明']
 };
 
@@ -344,7 +391,7 @@ function getAuditForm(token) {
     quarter: quarterLabel_(today_()),
     version: items[0].version || '',
     stations: stations.map(s => Object.assign(publicStation_(s), { auditedThisQuarter: !!audits.quarter[s.code], lastAudit: audits.last[s.code] || null })),
-    items: items.map(i => ({ code: i.code, cat: i.cat, text: i.text, law: i.law, pts: i.pts, risk: i.risk, other: isOtherItem_(i) })),
+    items: items.map(i => ({ code: i.code, cat: i.cat, text: i.text, law: i.law, pts: i.pts, risk: i.risk, other: isOtherItem_(i), suggest: suggestFor_(i) })),
     riskDays: riskDays_()
   };
 }
@@ -367,6 +414,9 @@ function submitAudit(token, payload) {
   const noOther = items.filter(i => isOtherItem_(i) && ans[i.code].result !== 'na' && !clean_(ans[i.code].other, 100));
   if (noOther.length) throw new Error('「其他」項目判定為符合或不符合時，請填寫項目內容');
 
+  ensureColumns_('檢查紀錄', ['站長確認人']);
+  ensureColumns_('檢查明細', ['改善建議']);
+  ensureColumns_('異常追蹤', ['改善建議']);
   const score = auditScore_(items, ans);
   const now = new Date();
   const today = today_();
@@ -389,6 +439,7 @@ function submitAudit(token, payload) {
       const a = ans[i.code];
       const note = clean_(a.note, 500);
       const other = isOtherItem_(i) ? clean_(a.other, 100) : '';
+      const sugg = a.result === 'ng' ? (clean_(a.suggest, 500) || suggestFor_(i)) : '';
       if (a.result === 'ng') {
         const subject = other || (i.text.length > 60 ? i.text.slice(0, 60) + '…' : i.text);
         issueRows.push({
@@ -397,14 +448,15 @@ function submitAudit(token, payload) {
           '風險等級': i.risk || riskForPoints_(i.pts), '狀態': '待處理', '建立日期': today,
           '改善期限': addDays_(today, days[i.risk || riskForPoints_(i.pts)] || 7), '處置說明': '', '改善後照片': '',
           '結案人': '', '結案日期': '',
-          '處置紀錄': JSON.stringify([{ t: stamp, who: sess.name + '（安保專員）', text: 'SL-H015 季查核不符合' + (photos[i.code] ? '，附照片 1 張' : '') }])
+          '處置紀錄': JSON.stringify([{ t: stamp, who: sess.name + '（安保專員）', text: 'SL-H015 季查核不符合' + (photos[i.code] ? '，附照片 1 張' : '') }]),
+          '改善建議': sugg
         });
       }
       return {
         '紀錄編號': recordId, '項目代碼': i.code, '結果': AUDIT_LABEL[a.result],
         '得分': a.result === 'ok' ? i.pts : (a.result === 'ng' ? 0 : ''),
         '說明': (other ? '其他：' + other : '') + (other && note ? '；' : '') + note,
-        '照片連結': photos[i.code] || ''
+        '照片連結': photos[i.code] || '', '改善建議': sugg
       };
     });
     appendObjects_('檢查紀錄', [{
@@ -446,37 +498,79 @@ function listAudits(token) {
 }
 
 /**
- * 匯出一次查核為 .xlsx（格式比照 SL-H015 紙本表單）。
+ * 匯出一次查核為 .xlsx。
+ * mode = 'ng'：只匯出不符合項目（含照片、改善建議、改善期限）。
+ * mode = 'all'：第一個工作表為完整 SL-H015 查核表（比照紙本），第二個工作表為不符合項目與照片。
  * 做法：建立暫存試算表 → 以擁有者權限匯出 xlsx → 刪除暫存檔 → 回傳 base64 給前端下載。
  */
-function exportAudit(token, recordId) {
+function exportAudit(token, recordId, mode) {
   const sess = session_(token, ['安保專員', '系統管理員']);
+  mode = mode === 'all' ? 'all' : 'ng';
   const rec = auditRecord_(sess, recordId);
   const station = stations_().find(s => s.code === String(rec['站點代碼'])) || { name: rec['站點代碼'], region: '', group: '' };
   const byCode = {};
   items_().forEach(i => { byCode[i.code] = i; });
   const details = readTable_('檢查明細').rows.filter(r => String(r['紀錄編號']) === recordId);
+  const issues = {};
+  readTable_('異常追蹤').rows.filter(r => String(r['紀錄編號']) === recordId).forEach(r => { issues[String(r['項目代碼'])] = r; });
   const date = dateStr_(rec['檢查日期']);
   const confirmed = rec['站長確認時間'] ? `${rec['站長確認人']}（${String(fmtAny_(rec['站長確認時間'])).slice(0, 16)}）` : '尚未確認';
 
   let pass = 0, total = 0, na = 0;
-  const body = details.map(d => {
-    const it = byCode[String(d['項目代碼'])] || { code: d['項目代碼'], cat: '', text: '', law: '', pts: 0 };
+  const all = details.map(d => {
+    const it = byCode[String(d['項目代碼'])] || { code: String(d['項目代碼']), cat: '', text: '', law: '', pts: 0, risk: '' };
     const pts = Number(it.pts) || 0;
     total += pts;
     if (d['結果'] === '符合') pass += pts;
     if (d['結果'] === '不適用') na += pts;
-    const desc = String(d['說明'] || '');
-    return [String(it.code).replace('H015-', ''), it.cat, it.text + (desc ? '\n（' + desc + '）' : ''), pts, d['結果'], d['結果'] === '不適用' ? '—' : (d['得分'] === '' ? '' : Number(d['得分'])), it.law || ''];
+    return { it: it, d: d, pts: pts, iss: issues[it.code] || null };
   });
   const base = total - na;
   const score = rec['得分'] === '' ? (base > 0 ? Math.round(pass / base * 1000) / 10 : '') : Number(rec['得分']);
+  const ng = all.filter(x => x.d['結果'] === '不符合');
+  const filename = 'SL-H015' + (mode === 'ng' ? '不符合改善事項_' : '查核表_') + station.name + '_' + date.split('-').join('') + '.xlsx';
+  const titleBase = '加油站安全衛生管理及營運設備查核表' + (rec['版本'] ? '（SL-H015 ' + rec['版本'] + ' 版）' : '');
+  const info = [
+    '站別：' + station.name + '（' + station.region + station.group + '）', '查核日期：' + date,
+    '查核人：' + rec['填報人'], '站長確認：' + confirmed,
+    '查核得分：' + (score === '' ? '—' : score) + ' 分（符合 ' + pass + ' ÷ 基準 ' + base + ' × 100）', '不符合項目：' + ng.length + ' 項'
+  ];
 
-  const title = '加油站安全衛生管理及營運設備查核表' + (rec['版本'] ? '（SL-H015 ' + rec['版本'] + ' 版）' : '');
+  const tmp = SpreadsheetApp.create('匯出暫存_' + filename);
+  const file = DriveApp.getFileById(tmp.getId());
+  try {
+    const folderId = getProp_('EXPORT_FOLDER_ID');
+    if (folderId) { try { file.moveTo(DriveApp.getFolderById(folderId)); } catch (e) { console.warn('EXPORT_FOLDER_ID 無法使用：' + e); } }
+    const first = tmp.getSheets()[0];
+    if (mode === 'all') {
+      writeFullSheet_(first, titleBase, info, all, pass, total, na, base, score);
+      writeNgSheet_(tmp.insertSheet('不符合改善事項'), '不符合項目改善事項', info, ng);
+    } else {
+      writeNgSheet_(first, '不符合項目改善事項', info, ng);
+    }
+    SpreadsheetApp.flush();
+    const res = UrlFetchApp.fetch('https://docs.google.com/spreadsheets/d/' + tmp.getId() + '/export?format=xlsx', {
+      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true
+    });
+    if (res.getResponseCode() !== 200) throw new Error('匯出失敗（' + res.getResponseCode() + '），請稍後再試');
+    return { filename: filename, data: Utilities.base64Encode(res.getBlob().getBytes()) };
+  } finally {
+    try { file.setTrashed(true); } catch (e) { console.warn('暫存檔刪除失敗：' + e); }
+  }
+}
+
+/** 完整查核表（比照 SL-H015 紙本）。 */
+function writeFullSheet_(sh, title, info, all, pass, total, na, base, score) {
+  sh.setName('SL-H015查核表');
+  const body = all.map(x => {
+    const desc = String(x.d['說明'] || '');
+    return [String(x.it.code).replace('H015-', ''), x.it.cat, x.it.text + (desc ? '\n（' + desc + '）' : ''), x.pts, x.d['結果'],
+      x.d['結果'] === '不適用' ? '—' : (x.d['得分'] === '' ? '' : Number(x.d['得分'])), x.it.law || ''];
+  });
   const rows = [
     [title, '', '', '', '', '', ''],
-    ['站別：' + station.name + '（' + station.region + station.group + '）', '', '', '查核日期：' + date, '', '', ''],
-    ['查核人：' + rec['填報人'], '', '', '站長確認：' + confirmed, '', '', ''],
+    [info[0], '', '', info[1], '', '', ''],
+    [info[2], '', '', info[3], '', '', ''],
     ['項次', '類別', '檢查項目', '配分', '查核情況', '得分', '法令規定']
   ].concat(body).concat([
     ['', '', '符合項目得分合計', '', '', pass, ''],
@@ -484,38 +578,96 @@ function exportAudit(token, recordId) {
     ['', '', '查核得分（百分制）', '', '', score, ''],
     ['備註：第一種危險場所：在加油機內部自其基礎向上至1.22公尺範圍內，及離加油機1.22公尺之四周自該基礎起向下至地面及向上至46公分處空間；第二種危險場所：在屋外其距加油機(即泵)外殼6公尺或裝有管路之油槽3公尺之四周範圍內至地面向上至46公分處。', '', '', '', '', '', '']
   ]);
+  const n = rows.length, head = 4, last = head + body.length;
+  sh.getRange(1, 1, n, 7).setValues(rows).setFontFamily('Arial').setFontSize(10).setVerticalAlignment('middle');
+  sh.getRange(1, 1, 1, 7).merge().setFontSize(14).setFontWeight('bold').setHorizontalAlignment('center');
+  [2, 3].forEach(r => { sh.getRange(r, 1, 1, 3).merge(); sh.getRange(r, 4, 1, 4).merge(); });
+  sh.getRange(head, 1, 1, 7).setFontWeight('bold').setBackground('#e2efe6').setHorizontalAlignment('center');
+  sh.getRange(head, 1, last - head + 4, 7).setBorder(true, true, true, true, true, true);
+  sh.getRange(head + 1, 3, body.length, 1).setWrap(true);
+  sh.getRange(head + 1, 7, body.length, 1).setWrap(true);
+  sh.getRange(head + 1, 4, body.length + 3, 3).setHorizontalAlignment('center');
+  all.forEach((x, k) => { if (x.d['結果'] === '不符合') sh.getRange(head + 1 + k, 5).setFontColor('#c0352d').setFontWeight('bold'); });
+  sh.getRange(last + 1, 3, 3, 1).setFontWeight('bold').setHorizontalAlignment('right');
+  sh.getRange(last + 3, 6).setFontWeight('bold').setFontSize(12);
+  sh.getRange(n, 1, 1, 7).merge().setWrap(true).setFontSize(9);
+  [48, 96, 380, 48, 72, 48, 220].forEach((w, k) => sh.setColumnWidth(k + 1, w));
+  sh.setFrozenRows(head);
+}
 
-  const filename = 'SL-H015查核表_' + station.name + '_' + date.split('-').join('') + '.xlsx';
-  const tmp = SpreadsheetApp.create('匯出暫存_' + filename);
-  const file = DriveApp.getFileById(tmp.getId());
+/** 不符合項目改善事項：每項一列，含照片（嵌入儲存格上方）、改善建議與改善期限。 */
+function writeNgSheet_(sh, title, info, ng) {
+  sh.setName('不符合改善事項');
+  const head = 5, PH = 150;
+  const header = ['項次', '檢查項目', '不符合說明', '照片', '改善建議', '風險', '改善期限', '照片連結'];
+  const body = ng.map(x => {
+    const iss = x.iss || {};
+    return [String(x.it.code).replace('H015-', ''), x.it.text + (x.it.law ? '\n（' + x.it.law + '）' : ''),
+      String(x.d['說明'] || '') || String(iss['異常說明'] || ''), '',
+      String(x.d['改善建議'] || '') || String(iss['改善建議'] || '') || suggestFor_(x.it),
+      String(iss['風險等級'] || x.it.risk || ''), dateStr_(iss['改善期限']), String(x.d['照片連結'] || '')];
+  });
+  const rows = [
+    [title, '', '', '', '', '', '', ''],
+    [info[0], '', '', '', info[1], '', '', ''],
+    [info[2], '', '', '', info[3], '', '', ''],
+    [info[4], '', '', '', info[5], '', '', ''],
+    header
+  ].concat(body.length ? body : [['', '本次查核沒有不符合項目', '', '', '', '', '', '']]);
+  const n = rows.length;
+  sh.getRange(1, 1, n, 8).setValues(rows).setFontFamily('Arial').setFontSize(10).setVerticalAlignment('middle');
+  sh.getRange(1, 1, 1, 8).merge().setFontSize(14).setFontWeight('bold').setHorizontalAlignment('center');
+  [2, 3, 4].forEach(r => { sh.getRange(r, 1, 1, 4).merge(); sh.getRange(r, 5, 1, 4).merge(); });
+  sh.getRange(head, 1, 1, 8).setFontWeight('bold').setBackground('#fbe8e6').setHorizontalAlignment('center');
+  sh.getRange(head, 1, n - head + 1, 8).setBorder(true, true, true, true, true, true);
+  if (body.length) {
+    sh.getRange(head + 1, 2, body.length, 4).setWrap(true).setVerticalAlignment('top');
+    sh.getRange(head + 1, 1, body.length, 1).setHorizontalAlignment('center');
+    sh.getRange(head + 1, 6, body.length, 2).setHorizontalAlignment('center');
+    sh.getRange(head + 1, 8, body.length, 1).setWrap(true).setFontSize(8);
+  }
+  [44, 230, 180, 210, 240, 48, 84, 120].forEach((w, k) => sh.setColumnWidth(k + 1, w));
+  ng.forEach((x, k) => {
+    const row = head + 1 + k, url = String(x.d['照片連結'] || '');
+    sh.setRowHeight(row, url ? PH + 12 : 60);
+    if (!url) { sh.getRange(row, 4).setValue('（未拍照）').setHorizontalAlignment('center'); return; }
+    try {
+      const img = sh.insertImage(photoBlob_(url), 4, row, 6, 6);
+      const w = img.getWidth(), h = img.getHeight(), k2 = Math.min(198 / w, PH / h, 1);
+      img.setWidth(Math.round(w * k2)).setHeight(Math.round(h * k2));
+    } catch (e) {
+      console.warn('照片嵌入失敗：' + e);
+      sh.getRange(row, 4).setValue('照片無法嵌入，請開啟右側連結').setWrap(true);
+    }
+  });
+  sh.setFrozenRows(head);
+}
+
+/** 取得照片內容：先取 Drive 縮圖（寬 600），失敗時用原檔。 */
+function photoBlob_(url) {
+  const m = /\/d\/([A-Za-z0-9_-]+)/.exec(url) || /[?&]id=([A-Za-z0-9_-]+)/.exec(url);
+  if (!m) throw new Error('照片連結格式不正確');
   try {
-    const folderId = getProp_('EXPORT_FOLDER_ID');
-    if (folderId) file.moveTo(DriveApp.getFolderById(folderId));
-    const sh = tmp.getSheets()[0];
-    sh.setName('SL-H015查核表');
-    const n = rows.length, head = 4, last = head + body.length;
-    sh.getRange(1, 1, n, 7).setValues(rows).setFontFamily('Arial').setFontSize(10).setVerticalAlignment('middle');
-    sh.getRange(1, 1, 1, 7).merge().setFontSize(14).setFontWeight('bold').setHorizontalAlignment('center');
-    [2, 3].forEach(r => { sh.getRange(r, 1, 1, 3).merge(); sh.getRange(r, 4, 1, 4).merge(); });
-    sh.getRange(head, 1, 1, 7).setFontWeight('bold').setBackground('#e2efe6').setHorizontalAlignment('center');
-    sh.getRange(head, 1, last - head + 4, 7).setBorder(true, true, true, true, true, true);
-    sh.getRange(head + 1, 3, body.length, 1).setWrap(true);
-    sh.getRange(head + 1, 7, body.length, 1).setWrap(true);
-    sh.getRange(head + 1, 4, body.length + 3, 3).setHorizontalAlignment('center');
-    sh.getRange(last + 1, 3, 3, 1).setFontWeight('bold').setHorizontalAlignment('right');
-    sh.getRange(last + 3, 6).setFontWeight('bold').setFontSize(12);
-    sh.getRange(n, 1, 1, 7).merge().setWrap(true).setFontSize(9);
-    [48, 96, 380, 48, 72, 48, 220].forEach((w, k) => sh.setColumnWidth(k + 1, w));
-    sh.setFrozenRows(head);
-    SpreadsheetApp.flush();
-    const blob = UrlFetchApp.fetch('https://docs.google.com/spreadsheets/d/' + tmp.getId() + '/export?format=xlsx', {
+    const r = UrlFetchApp.fetch('https://drive.google.com/thumbnail?id=' + m[1] + '&sz=w600', {
       headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true
     });
-    if (blob.getResponseCode() !== 200) throw new Error('匯出失敗（' + blob.getResponseCode() + '），請稍後再試');
-    return { filename: filename, data: Utilities.base64Encode(blob.getBlob().getBytes()) };
-  } finally {
-    try { file.setTrashed(true); } catch (e) { console.warn('暫存檔刪除失敗：' + e); }
-  }
+    if (r.getResponseCode() === 200 && String(r.getHeaders()['Content-Type'] || r.getHeaders()['content-type'] || '').indexOf('image') === 0) return r.getBlob();
+  } catch (e) { console.warn('縮圖取得失敗：' + e); }
+  return DriveApp.getFileById(m[1]).getBlob();
+}
+
+function suggestFor_(i) {
+  if (i.suggest) return i.suggest;
+  if (isOtherItem_(i)) return OTHER_SUGGEST;
+  return DEFAULT_SUGGEST[i.code] || OTHER_SUGGEST;
+}
+
+/** 工作表缺少欄位時，在最右邊補上（不移動既有欄位）。 */
+function ensureColumns_(name, cols) {
+  const sh = sheet_(name);
+  const headers = headers_(sh);
+  const miss = cols.filter(c => headers.indexOf(c) < 0);
+  if (miss.length) sh.getRange(1, headers.filter(h => h).length + 1, 1, miss.length).setValues([miss]);
 }
 
 /** 第一次部署或更新授權範圍後，在編輯器執行一次這個函式完成授權。 */
@@ -816,7 +968,7 @@ function items_() {
     version: String(r['版本'] || ''), freq: String(r['頻率'] || '').trim(), cat: String(r['類別'] || '').trim(),
     text: String(r['檢查內容'] || '').trim(), std: String(r['判定標準'] || ''), law: String(r['法規依據'] || ''),
     risk: String(r['風險等級'] || '').trim(), pts: r['配分'] === '' || r['配分'] === null ? null : Number(r['配分']),
-    order: Number(r['排序']) || 0, on: yes_(r['啟用']), _row: r._row
+    order: Number(r['排序']) || 0, on: yes_(r['啟用']), suggest: String(r['改善建議'] || '').trim(), _row: r._row
   })).filter(i => i.code).sort((a, b) => a.order - b.order);
 }
 

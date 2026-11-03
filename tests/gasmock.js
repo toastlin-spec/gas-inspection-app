@@ -6,7 +6,7 @@ const SRC = __dirname + '/../src';
 
 function makeEnv(workbookPath, opts = {}) {
   const wb = JSON.parse(fs.readFileSync(workbookPath, 'utf8'));
-  const log = { mails: [], files: [], created: [], fetches: [], moved: [], trashed: [] };
+  const log = { mails: [], files: [], created: [], fetches: [], moved: [], trashed: [], images: [] };
   const toCell = v => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) ? new Date(v + 'T00:00:00+08:00') : v; // 模擬試算表把日期字串轉成日期
 
   class Range {
@@ -27,6 +27,8 @@ function makeEnv(workbookPath, opts = {}) {
     getRange(r, c, nr = 1, nc = 1) { if (r < 1 || c < 1 || nr < 1 || nc < 1) throw new Error(`getRange 參數錯誤 ${r},${c},${nr},${nc}`); return chain(new Range(this, r, c, nr, nc)); }
     setName(n) { this.name = n; return this; }
     setColumnWidth() { return this; }
+    setRowHeight() { return this; }
+    insertImage(blob, c, r) { log.images.push({ sheet: this.name, c, r, size: (blob.bytes || []).length }); let w = 600, h = 450; const img = { getWidth: () => w, getHeight: () => h, setWidth: v => { w = v; return img; }, setHeight: v => { h = v; return img; } }; return img; }
     setFrozenRows() { return this; }
   }
   const sheets = {};
@@ -47,7 +49,7 @@ function makeEnv(workbookPath, opts = {}) {
       getFoldersByName: n => { const f = kids[n]; let used = false; return { hasNext: () => !!f && !used, next: () => { used = true; return f; } }; },
       getId: () => 'folder-' + name,
       createFolder: n => (kids[n] = folder(n)),
-      createFile: blob => { log.files.push({ folder: name, name: blob.name, size: blob.bytes.length }); return { getUrl: () => 'https://drive.google.com/file/d/' + crypto.randomBytes(6).toString('hex') + '/view' }; }
+      createFile: blob => { log.files.push({ folder: name, name: blob.name, size: blob.bytes.length }); return { getUrl: () => 'https://drive.google.com/file/d/' + crypto.randomBytes(6).toString('hex') + '/view?usp=drivesdk' }; }
     };
   }
   const root = folder('巡檢照片');
@@ -56,8 +58,8 @@ function makeEnv(workbookPath, opts = {}) {
   const ctx = {
     console,
     SpreadsheetApp: { getActiveSpreadsheet: () => ss, openById: () => ss, flush: () => {},
-      create: name => { const sh = new Sheet('工作表1', []); const id = 'tmp' + log.created.length; const t = { getId: () => id, getName: () => name, getSheets: () => [sh] }; log.created.push({ id, name, sheet: sh }); return t; } },
-    UrlFetchApp: { fetch: (url, o) => { log.fetches.push(url); return { getResponseCode: () => 200, getBlob: () => ({ getBytes: () => Array.from(Buffer.from('PK-fake-xlsx')) }) }; } },
+      create: name => { const sh = new Sheet('工作表1', []); const id = 'tmp' + log.created.length; const list = [sh]; const t = { getId: () => id, getName: () => name, getSheets: () => list, insertSheet: n => { const x = new Sheet(n, []); list.push(x); return x; } }; log.created.push({ id, name, sheet: sh, sheets: list }); return t; } },
+    UrlFetchApp: { fetch: (url, o) => { log.fetches.push(url); const isThumb = url.indexOf('thumbnail') >= 0; return { getResponseCode: () => 200, getHeaders: () => ({ 'Content-Type': isThumb ? 'image/jpeg' : 'application/vnd.openxmlformats' }), getBlob: () => ({ bytes: [1, 2, 3], getBytes: () => Array.from(Buffer.from('PK-fake-xlsx')) }) }; } },
     ScriptApp: { getOAuthToken: () => 'token' },
     Utilities: {
       Charset: { UTF_8: 'UTF-8' }, formatDate: fmtDate, getUuid: () => crypto.randomUUID(), sleep: () => {},

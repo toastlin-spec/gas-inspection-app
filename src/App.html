@@ -1,5 +1,7 @@
-/* 加油站巡檢 App — 畫面程式（版本見 Index.html 的 __appVersion）
+/* 加油站巡檢 App — 畫面程式
  * 這個檔案由 Code.gs 以原始內容讀取後編碼傳給畫面執行，請勿加上 <script> 標籤。 */
+window.__appVersion='1.2.0';
+(function(){var st=document.createElement('style');st.textContent='.choice{display:flex;flex-direction:column;gap:4px;text-align:left;width:100%;border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:14px 16px;cursor:pointer}.choice:hover{border-color:var(--accent)}.choice:disabled{opacity:.6;cursor:wait}';document.head.appendChild(st)})();
 const ICON={
  home:'<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
  check:'<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/>',
@@ -74,12 +76,12 @@ async function onRoute(){
 function groupBy(arr,f){const m=new Map();arr.forEach(x=>{const k=f(x);if(!m.has(k))m.set(k,[]);m.get(k).push(x)});return m}
 function stationOptions(list,sel){return REGIONS.map(r=>{const g=list.filter(s=>s.region===r);return g.length?`<optgroup label="${r}">${g.map(s=>`<option value="${esc(s.code)}" ${s.code===sel?'selected':''}>${esc(s.group)}・${esc(s.name)}</option>`).join('')}</optgroup>`:''}).join('')}
 const mgrName=s=>String(s||'').split('（兼）').join('').split('(兼)').join('').trim();
-function freshAudit(){return{station:'',ans:{},other:{},note:{},photo:{},tried:false,result:null,openCats:null}}
+function freshAudit(){return{station:'',ans:{},other:{},note:{},sugg:{},photo:{},tried:false,result:null,openCats:null}}
 const auditKey=()=>S.auditForm&&S.audit.station?`gi_audit_${S.audit.station}_${S.auditForm.today}`:'';
-function saveAuditDraft(){const k=auditKey();if(k)draft.set(k,{ans:S.audit.ans,other:S.audit.other,note:S.audit.note})}
+function saveAuditDraft(){const k=auditKey();if(k)draft.set(k,{ans:S.audit.ans,other:S.audit.other,note:S.audit.note,sugg:S.audit.sugg})}
 function loadAuditDraft(){const F=S.auditForm,a=S.audit;if(!F)return;const k=auditKey(),d=k&&draft.get(k);
  const def={};F.items.forEach(i=>{if(i.other)def[i.code]='na'});
- a.ans=d&&d.ans||def;a.other=d&&d.other||{};a.note=d&&d.note||{};a.photo={};a.tried=false;a.openCats=null}
+ a.ans=d&&d.ans||def;a.other=d&&d.other||{};a.note=d&&d.note||{};a.sugg=d&&d.sugg||{};a.photo={};a.tried=false;a.openCats=null}
 function pickAuditStation(){const F=S.auditForm,a=S.audit;if(!F||!F.stations.length)return;
  if(a.station&&F.stations.some(s=>s.code===a.station))return;
  const next=F.stations.find(s=>!s.auditedThisQuarter)||F.stations[0];a.station=next.code}
@@ -130,7 +132,7 @@ function vHome(){
   ${H.audit?`<section class="panel stack"><div class="row between"><h2>${esc(H.audit.quarter)}・SL-H015 查核</h2>${a.role==='安保專員'?'<a class="btn sm primary" href="#audit">開始查核</a>':''}</div>
    <div class="bar"><i style="width:${H.audit.total?Math.round(H.audit.done/H.audit.total*100):0}%"></i></div>
    <span class="small muted">本季已查核 <b class="mono">${H.audit.done}</b> / ${H.audit.total} 站</span>
-   ${H.audit.recent.length?`<div>${H.audit.recent.map(r=>`<div class="list-row"><div><b>${esc(r.stationName)}</b> <span class="mono small">${fmtScore(r.score)} 分</span><span class="sub">${md(r.date)}・${esc(r.auditor)}・${r.confirmed?'站長已確認':'站長未確認'}${r.ng?'・不符合 '+r.ng+' 項':''}</span></div><button class="btn sm" data-act="exportAudit" data-id="${esc(r.recordId)}" data-busy>Excel</button></div>`).join('')}</div>`:'<p class="small muted" style="margin:0">本季尚無查核紀錄。</p>'}
+   ${H.audit.recent.length?`<div>${H.audit.recent.map(r=>`<div class="list-row"><div><b>${esc(r.stationName)}</b> <span class="mono small">${fmtScore(r.score)} 分</span><span class="sub">${md(r.date)}・${esc(r.auditor)}・${r.confirmed?'站長已確認':'站長未確認'}${r.ng?'・不符合 '+r.ng+' 項':''}</span></div><button class="btn sm" data-act="exportAudit" data-id="${esc(r.recordId)}">Excel</button></div>`).join('')}</div>`:'<p class="small muted" style="margin:0">本季尚無查核紀錄。</p>'}
   </section>`:''}
   <section class="panel stack"><div class="row between"><h2>今日每日檢查・${list.length} 站</h2><span class="small muted mono">${md(H.today)}</span></div>
    <div class="grid2"><div class="mini"><b>${done}</b><span><i class="dot g"></i>已完成</span></div><div class="mini"><b style="color:var(--bad)">${none}</b><span><i class="dot r"></i>尚未送出</span></div></div>
@@ -213,6 +215,7 @@ function vAudit(){
      <button class="ng" aria-pressed="${v==='ng'}" data-act="aans" data-code="${esc(i.code)}" data-v="ng">不符合</button>
      <button class="na" aria-pressed="${v==='na'}" data-act="aans" data-code="${esc(i.code)}" data-v="na">不適用</button></div>
     ${v==='ng'?`<div class="field"><label for="an-${esc(i.code)}">不符合說明（會成為異常內容）</label><textarea id="an-${esc(i.code)}" data-anote="${esc(i.code)}" maxlength="500" placeholder="例如：95 無鉛卸油口未上鎖">${esc(a.note[i.code]||'')}</textarea></div>
+     <div class="field"><label for="as-${esc(i.code)}">改善建議（已帶入建議內容，可修改）</label><textarea id="as-${esc(i.code)}" data-asugg="${esc(i.code)}" maxlength="500">${esc(a.sugg[i.code]!==undefined?a.sugg[i.code]:(i.suggest||''))}</textarea></div>
      <div class="photo">${a.photo[i.code]?`<img class="thumb" src="${a.photo[i.code]}" alt="不符合照片"><button class="btn sm ghost" data-act="rmAPhoto" data-code="${esc(i.code)}">移除</button>`:''}<label class="btn" for="ap-${esc(i.code)}">${ic('camera','s')}${a.photo[i.code]?'重拍':'拍照'}</label><input type="file" accept="image/*" capture="environment" id="ap-${esc(i.code)}" data-aphoto="${esc(i.code)}"><span class="small muted">風險 <span class="risk ${esc(i.risk)}">${esc(i.risk)}</span>・改善期限 ${F.riskDays[i.risk]||7} 天</span></div>`:''}
     ${err?`<p class="msg" style="color:var(--warn)">${v?'請填寫其他項目內容':'此項尚未選擇'}</p>`:''}
     ${i.law?`<div class="law">${esc(i.law)}</div>`:''}</div>`;
@@ -225,6 +228,12 @@ function vAudit(){
   <button class="btn primary block" data-act="submitAudit" data-busy>完成查核</button></div>`;
  return html;
 }
+function vExportSheet(id){
+ return `<div class="sheet-head"><h1>匯出 Excel</h1><button class="iconbtn" data-act="closeSheet" aria-label="關閉">${ic('x','s')}</button></div>
+ <button class="choice" data-act="doExport" data-id="${esc(id)}" data-mode="ng" data-busy><b>只匯出不符合項目</b><span class="small muted">每項含不符合說明、照片、改善建議與改善期限，適合交給站長改善。</span></button>
+ <button class="choice" data-act="doExport" data-id="${esc(id)}" data-mode="all" data-busy><b>全部項目</b><span class="small muted">第一頁為完整 SL-H015 查核表（比照紙本），第二頁為不符合項目與照片。</span></button>
+ <p class="small muted" style="margin:0">照片較多時需要 10 到 30 秒產生檔案。</p>`;
+}
 function vAuditDone(){
  const R=S.audit.result;
  return `<div class="panel done-card"><div class="big">${ic('audit')}</div><h1>${esc(R.station.name)} 查核完成</h1>
@@ -234,7 +243,7 @@ function vAuditDone(){
  ${R.confirmedBy?`<p class="small" style="color:var(--accent)">${ic('ok','s')} 站長 ${esc(R.confirmedBy)} 已確認查核結果</p>`:
  `<form class="panel stack" data-form="confirm" style="background:var(--warn-soft);border-color:var(--warn);text-align:left;margin-top:12px"><b>請站長確認查核結果</b><span class="small">請站長在這支手機上確認姓名後按下確認，取代紙本簽名。</span>
   <div class="field"><label for="cfName">站長姓名</label><input type="text" id="cfName" value="${esc(mgrName(R.station.mgr))}" maxlength="30" required></div><button class="btn block" data-busy>站長確認查核結果</button></form>`}
- <div class="stack" style="margin-top:16px"><button class="btn primary block" data-act="exportAudit" data-id="${esc(R.recordId)}" data-busy>下載 Excel 查核表</button><a class="btn block" href="#issues">查看異常</a><button class="btn block ghost" data-act="newAudit" data-busy>開始下一站查核</button></div></div>`;
+ <div class="stack" style="margin-top:16px"><button class="btn primary block" data-act="exportAudit" data-id="${esc(R.recordId)}">匯出 Excel</button><a class="btn block" href="#issues">查看異常</a><button class="btn block ghost" data-act="newAudit" data-busy>開始下一站查核</button></div></div>`;
 }
 
 /* ---------- 異常（第一階段唯讀） ---------- */
@@ -336,6 +345,7 @@ function render(){
  document.getElementById('view').innerHTML=V[r]();
  let sheet='';
  if(S.sheet&&S.sheet.type==='issue'){const i=(S.issues||[]).find(x=>x.id===S.sheet.key);if(i)sheet=vIssueSheet(i)}
+ else if(S.sheet&&S.sheet.type==='export')sheet=vExportSheet(S.sheet.key);
  else if(S.sheet)sheet=vEditSheet(S.sheet);
  document.getElementById('sheet').innerHTML=sheet?`<div class="sheet-wrap" data-act="closeSheet"><div class="sheet" role="dialog" aria-modal="true">${sheet}</div></div>`:'';
  setBusy(0);
@@ -377,12 +387,13 @@ document.addEventListener('click',async e=>{
   const F=S.auditForm,a=S.audit;
   const bad=F.items.filter(i=>!a.ans[i.code]||(i.other&&a.ans[i.code]!=='na'&&!(a.other[i.code]||'').trim()));
   if(bad.length){a.tried=true;a.openCats=[bad[0].cat];render();const t=document.getElementById('it-'+bad[0].code);t&&t.scrollIntoView({block:'center',behavior:'smooth'});toastT(`還有 ${bad.length} 項需要完成`);return}
-  const answers=F.items.map(i=>({code:i.code,result:a.ans[i.code],note:a.ans[i.code]==='ng'?(a.note[i.code]||''):'',other:i.other?(a.other[i.code]||''):'',photo:a.ans[i.code]==='ng'?(a.photo[i.code]||''):''}));
+  const answers=F.items.map(i=>({code:i.code,result:a.ans[i.code],note:a.ans[i.code]==='ng'?(a.note[i.code]||''):'',suggest:a.ans[i.code]==='ng'?(a.sugg[i.code]!==undefined?a.sugg[i.code]:(i.suggest||'')):'',other:i.other?(a.other[i.code]||''):'',photo:a.ans[i.code]==='ng'?(a.photo[i.code]||''):''}));
   const R=await call('submitAudit',S.token,{station:a.station,answers});
   draft.del(auditKey());a.result=Object.assign(R,{confirmedBy:''});render();window.scrollTo({top:0});return}
  if(A==='newAudit'){const prev=S.audit.result&&S.audit.result.station.code;S.audit=freshAudit();S.auditForm=await call('getAuditForm',S.token);
   const next=S.auditForm.stations.find(x=>!x.auditedThisQuarter&&x.code!==prev)||S.auditForm.stations[0];S.audit.station=next?next.code:'';loadAuditDraft();render();window.scrollTo({top:0});return}
- if(A==='exportAudit'){const r=await call('exportAudit',S.token,d.id);downloadBase64(r.filename,r.data);return}
+ if(A==='exportAudit'){S.sheet={type:'export',key:d.id};render();return}
+ if(A==='doExport'){const r=await call('exportAudit',S.token,d.id,d.mode);S.sheet=null;render();downloadBase64(r.filename,r.data);return}
  if(A==='ifilter'){S.issueFilter=d.f;render();return}
  if(A==='openIssue'){S.sheet={type:'issue',key:d.id};render();return}
  if(A==='closeSheet'){S.sheet=null;render();return}
@@ -400,7 +411,8 @@ document.addEventListener('input',e=>{const t=e.target;
  if(t.dataset.note){S.check.note[t.dataset.note]=t.value;saveDraft()}
  if(t.id==='lgName')S.login.name=t.value;
  if(t.dataset.aother){S.audit.other[t.dataset.aother]=t.value;saveAuditDraft()}
- if(t.dataset.anote){S.audit.note[t.dataset.anote]=t.value;saveAuditDraft()}});
+ if(t.dataset.anote){S.audit.note[t.dataset.anote]=t.value;saveAuditDraft()}
+ if(t.dataset.asugg){S.audit.sugg[t.dataset.asugg]=t.value;saveAuditDraft()}});
 document.addEventListener('change',async e=>{const t=e.target;
  if(t.id==='lgSt'){S.login.station=t.value;const s=S.login.stations.find(x=>x.code===t.value);S.login.name=mgrName(s&&s.mgr);render();return}
  if(t.id==='auditSt'){saveAuditDraft();S.audit.station=t.value;loadAuditDraft();render();return}

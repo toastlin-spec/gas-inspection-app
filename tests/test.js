@@ -83,7 +83,7 @@ throws(() => G.submitAudit(off.token, { station: 'C04', answers: mk({ 'H015-B07'
 const before = log.mails.length;
 const au = G.submitAudit(off.token, { station: 'C04', answers: mk({
   'H015-C06': { result: 'na' }, 'H015-C12': { result: 'na' },
-  'H015-D06': { result: 'ng', note: '95 無鉛卸油口未上鎖', photo: PNG },
+  'H015-D06': { result: 'ng', note: '95 無鉛卸油口未上鎖', photo: PNG, suggest: '更換為附鎖蓋並每日下班前檢查' },
   'H015-B07': { result: 'ok', other: '急救箱鑰匙放置位置標示' } }) });
 assert(au.pass === 90 && au.base === 93 && au.score === 96.8 && au.ngCount === 1 && au.naCount === 5); ok(`計分正確：符合 ${au.pass} ÷ 基準 ${au.base} × 100 ＝ ${au.score}`);
 assert(au.high === 1 && au.mailed && log.mails.length === before + 1 && /SL-H015/.test(log.mails.at(-1).body)); ok('不符合的 D06（3 分）列為高風險並寄出通知');
@@ -96,13 +96,22 @@ assert(det.length === 46); ok('查核明細寫入 46 列');
 throws(() => G.confirmAudit(off.token, au.recordId, ''), /姓名/, '站長姓名空白被拒絕');
 const cf = G.confirmAudit(off.token, au.recordId, '李丞芯'); assert(cf.confirmedBy === '李丞芯'); ok('站長確認查核結果');
 throws(() => G.confirmAudit(off.token, au.recordId, '李丞芯'), /已經確認/, '不能重複確認');
-const ex = G.exportAudit(off.token, au.recordId);
-assert(/^SL-H015查核表_台中站_\d{8}\.xlsx$/.test(ex.filename) && Buffer.from(ex.data, 'base64').toString() === 'PK-fake-xlsx'); ok('匯出 Excel：' + ex.filename);
-const xs = log.created.at(-1).sheet.data;
-assert(xs[3].join() === '項次,類別,檢查項目,配分,查核情況,得分,法令規定' && xs.length === 4 + 46 + 4); ok('匯出表格：表頭與 46 項明細');
-const tot = xs.slice(50, 53).map(r => r[5]); assert(tot[0] === 90 && tot[1] === 93 && tot[2] === 96.8); ok('匯出合計列：' + tot.join(' / '));
-assert(/李丞芯/.test(xs[2][3]) && /其他：急救箱鑰匙/.test(xs.find(r => r[0] === 'B07')[2])); ok('匯出含站長確認與其他欄位內容');
-assert(log.trashed.includes(log.created.at(-1).id)); ok('暫存試算表已刪除');
+assert(form.items.find(i => i.code === 'H015-D06').suggest.indexOf('加鎖') >= 0 && form.items.find(i => i.code === 'H015-B07').suggest); ok('查核表單帶入預設改善建議');
+const issD06 = sheets['異常追蹤'].data.find(r => r.includes('H015-D06')); const ih = sheets['異常追蹤'].data[0];
+assert(issD06[ih.indexOf('改善建議')] === '更換為附鎖蓋並每日下班前檢查'); ok('自訂改善建議寫入異常追蹤');
+let ex = G.exportAudit(off.token, au.recordId, 'ng');
+let X = log.created.at(-1);
+assert(/^SL-H015不符合改善事項_台中站_\d{8}\.xlsx$/.test(ex.filename) && X.sheets.length === 1 && X.sheets[0].name === '不符合改善事項'); ok('只匯出不符合項目：' + ex.filename);
+const nh = X.sheet.data[4]; assert(nh.join() === '項次,檢查項目,不符合說明,照片,改善建議,風險,改善期限,照片連結'); ok('不符合表欄位：' + nh.join('、'));
+const nrow = X.sheet.data[5]; assert(nrow[0] === 'D06' && nrow[2] === '95 無鉛卸油口未上鎖' && nrow[4] === '更換為附鎖蓋並每日下班前檢查' && nrow[5] === '高' && /drive\.google\.com/.test(nrow[7])); ok('不符合列：說明、改善建議、風險、照片連結都正確');
+assert(log.images.length === 1 && log.images[0].c === 4 && log.images[0].r === 6 && log.fetches.some(u => u.indexOf('thumbnail?id=') >= 0)); ok('照片嵌入第 6 列「照片」欄（取 Drive 縮圖）');
+ex = G.exportAudit(off.token, au.recordId, 'all'); X = log.created.at(-1);
+assert(/^SL-H015查核表_台中站_\d{8}\.xlsx$/.test(ex.filename) && X.sheets.map(s => s.name).join() === 'SL-H015查核表,不符合改善事項'); ok('全部匯出：兩個工作表 ' + X.sheets.map(s => s.name).join('、'));
+const xs = X.sheet.data;
+assert(xs[3].join() === '項次,類別,檢查項目,配分,查核情況,得分,法令規定' && xs.length === 4 + 46 + 4); ok('完整查核表：表頭與 46 項明細');
+const tot = xs.slice(50, 53).map(r => r[5]); assert(tot[0] === 90 && tot[1] === 93 && tot[2] === 96.8); ok('完整表合計列：' + tot.join(' / '));
+assert(/李丞芯/.test(xs[2][3]) && /其他：急救箱鑰匙/.test(xs.find(r => r[0] === 'B07')[2])); ok('完整表含站長確認與其他欄位內容');
+assert(log.trashed.includes(X.id) && log.images.length === 2); ok('暫存試算表已刪除；全部匯出也嵌入照片');
 throws(() => G.exportAudit(off2.token, au.recordId), /權限/, '黃瓊瑤不能匯出中區查核');
 assert(G.listAudits(adm0.token).length === 1); ok('管理員可看到查核紀錄');
 

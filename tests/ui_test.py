@@ -67,6 +67,7 @@ with sync_playwright() as p:
         if c in ('H015-B07','H015-C14','H015-D10','H015-F07'): continue
         pg.evaluate('''c => { document.querySelectorAll('details.sec').forEach(d => d.open = true); document.querySelector(`#it-${c} button.${c==='H015-C06'||c==='H015-C12'?'na':(c==='H015-D06'?'ng':'ok')}`).click(); }''', c)
     pg.fill('#an-H015-D06', '95 無鉛卸油口未上鎖')
+    ok('改善建議自動帶入：' + pg.input_value('#as-H015-D06')[:24] + '…')
     pg.set_input_files('#ap-H015-D06', OUT + 'photo.png'); pg.wait_for_selector('#it-H015-D06 img.thumb')
     score = pg.inner_text('.dock .score b'); ok('即時計分：' + score + ' 分｜' + pg.inner_text('.dock .mono'))
     pg.screenshot(path=OUT + '9_audit.png')
@@ -74,9 +75,16 @@ with sync_playwright() as p:
     ok('查核完成：' + pg.inner_text('.done-card .score').replace(chr(10), ' '))
     pg.click('form[data-form="confirm"] button'); pg.wait_for_selector('text=已確認查核結果')
     ok('站長確認：' + pg.inner_text('.done-card p.small'))
+    pg.click('text=匯出 Excel'); pg.wait_for_selector('.choice')
+    ok('匯出選項：' + '／'.join(pg.locator('.choice b').all_inner_texts()))
+    pg.screenshot(path=OUT + '11_export_choice.png')
     with pg.expect_download() as dl:
-        pg.click('text=下載 Excel 查核表')
-    ok('下載檔案：' + dl.value.suggested_filename)
+        pg.click('.choice[data-mode="ng"]')
+    ok('只匯出不符合：' + dl.value.suggested_filename)
+    pg.click('text=匯出 Excel'); pg.wait_for_selector('.choice')
+    with pg.expect_download() as dl2:
+        pg.click('.choice[data-mode="all"]')
+    ok('全部匯出：' + dl2.value.suggested_filename)
     pg.screenshot(path=OUT + '10_audit_done.png')
     pg.click('nav a[href="#home"]'); pg.wait_for_selector('text=本季已查核')
     ok('首頁查核進度：' + pg.inner_text('text=本季已查核'))
