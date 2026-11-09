@@ -1,6 +1,6 @@
 /* 加油站巡檢 App — 畫面程式
  * 這個檔案由 Code.gs 以原始內容讀取後編碼傳給畫面執行，請勿加上 <script> 標籤。 */
-window.__appVersion='1.4.2';
+window.__appVersion='1.5.0';
 (function(){var st=document.createElement('style');st.textContent='.choice{display:flex;flex-direction:column;gap:4px;text-align:left;width:100%;border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:14px 16px;cursor:pointer}.choice:hover{border-color:var(--accent)}.choice:disabled{opacity:.6;cursor:wait}';document.head.appendChild(st)})();
 const ICON={
  home:'<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
@@ -27,7 +27,7 @@ const S={token:null,sess:null,home:null,
  login:{step:1,pick:'',role:null,pw:'',stations:[],officers:[],station:'',name:'',officer:'',err:''},
  check:{freq:'每日',ans:{},note:{},photo:{},purl:{},tried:false,result:null},
  audit:{station:'',ans:{},other:{},note:{},photo:{},tried:false,result:null,openCats:null},auditForm:null,
- equip:null,equipForm:null,
+ equip:null,equipForm:null,fix:{photo:{},purl:{},note:{}},
  uploading:{},issues:null,issueFilter:'未結案',admin:null,manageTab:'站點',stRegion:'全部',itemForm:'自主檢查',problems:null,sheet:null,busy:0};
 
 const TABS={
@@ -345,7 +345,7 @@ function vIssues(){
    <span class="m"><span class="risk ${esc(i.risk)}">${esc(i.risk)}</span><span class="mono">${esc(i.code)}</span><span>${esc(i.stationName)}</span>
    <span>${i.status==='已結案'?'結案 '+md(i.closed):'期限 '+md(i.due)}</span>${i.overdue?'<span class="over-tag">已逾期</span>':''}</span></button>`).join('')
   :`<div class="panel muted">這個分類目前沒有異常。</div>`}</div>
- <p class="small muted" style="margin:0">異常的改善回報、驗證與結案在第二階段開放。</p>`;
+ <p class="small muted" style="margin:0">${['安保專員','系統管理員'].includes(S.sess.role)?'點選缺失可以結案。':'缺失由安保專員確認改善後結案。'}站長改善回報與退回流程將在第二階段開放。</p>`;
 }
 function vIssueSheet(i){
  return `<div class="sheet-head"><h1>${esc(i.title)}</h1><button class="iconbtn" data-act="closeSheet" aria-label="關閉">${ic('x','s')}</button></div>
@@ -353,7 +353,21 @@ function vIssueSheet(i){
  <div class="panel grid2 small"><div><span class="muted">通報日</span><br><b class="mono">${md(i.created)}</b></div><div><span class="muted">改善期限</span><br><b class="mono ${i.overdue?'over-tag':''}">${md(i.due)}${i.overdue?' 已逾期':''}</b></div></div>
  ${i.photo?`<a class="btn block" href="${esc(i.photo)}" target="_blank" rel="noopener">${ic('camera','s')}開啟異常照片</a>`:''}
  <section class="panel"><h2 style="margin-bottom:10px">處置紀錄</h2><ol class="timeline">${(i.log||[]).map(l=>`<li><span class="mono">${esc(String(l.t||'').slice(5,16))}</span> <span class="who">${esc(l.who)}</span><br>${esc(l.text)}</li>`).join('')}</ol></section>
- <p class="small muted" style="margin:0">異常 ${esc(i.id)}・改善回報與結案將在第二階段開放。</p>`;
+ ${vIssueClose(i)}
+ <p class="small muted" style="margin:0">缺失編號 ${esc(i.id)}</p>`;
+}
+function vIssueClose(i){
+ const can=['安保專員','系統管理員'].includes(S.sess.role),F=S.fix,id=i.id;
+ if(i.status==='已結案')return `<section class="panel stack" style="border-color:var(--accent)"><h2>${ic('ok','s')} 已結案</h2>
+  <div class="grid2 small"><div><span class="muted">結案人</span><br><b>${esc(i.closer||'—')}</b></div><div><span class="muted">結案日</span><br><b class="mono">${md(i.closed)||'—'}</b></div></div>
+  ${i.fixNote?`<p class="small" style="margin:0"><span class="muted">結案說明：</span>${esc(i.fixNote)}</p>`:''}
+  ${i.fixPhoto?`<a class="btn block" href="${esc(i.fixPhoto)}" target="_blank" rel="noopener">${ic('camera','s')}開啟改善後照片</a>`:''}
+  ${can?`<form class="stack" data-form="reopen"><input type="hidden" id="roId" value="${esc(id)}"><div class="field"><label for="roReason">按錯了？填寫原因後可以取消結案</label><input type="text" id="roReason" maxlength="300" placeholder="例如：誤按結案，尚未改善"></div><button class="btn ghost block" data-busy>取消結案</button></form>`:''}</section>`;
+ if(!can)return '';
+ return `<form class="panel stack" data-form="closeIssue"><h2>結案</h2><input type="hidden" id="fxId" value="${esc(id)}">
+  <div class="field"><label for="fxNote">結案說明（必填）</label><textarea id="fxNote" data-fxnote="${esc(id)}" maxlength="500" placeholder="例如：已更換卸油口鎖，現場確認上鎖">${esc(F.note[id]||'')}</textarea></div>
+  <div class="photo">${photoBox(id,F.photo[id],F.purl[id],'x:'+id)}<label class="btn" for="xp-${esc(id)}">${ic('camera','s')}${(F.photo[id]||F.purl[id])?'重拍':'改善後照片（選填）'}</label><input type="file" accept="image/*" capture="environment" id="xp-${esc(id)}" data-xphoto="${esc(id)}" data-st="${esc(i.station)}"></div>
+  <button class="btn primary block" data-busy>確認改善完成，結案</button></form>`;
 }
 
 /* ---------- 管理設定 ---------- */
@@ -464,7 +478,7 @@ async function takePhoto(o,code,station,prefix,file){
  try{const r=await api('uploadPhoto',S.token,station,code,o.photo[code]);o.purl[code]=r.url;toastT('照片已上傳')}
  catch(err){const m=String(err&&err.message||err);if(m.indexOf('SESSION_EXPIRED')>=0){toastT('登入已逾時，請重新登入');resetAll();render();return}toastT('照片上傳失敗：'+stripErr(m))}
  finally{delete S.uploading[id]}
- if(o===S.audit)saveAuditDraft();else if(o===S.equip)saveEquipDraft();else saveDraft();
+ if(o===S.audit)saveAuditDraft();else if(o===S.equip)saveEquipDraft();else if(o!==S.fix)saveDraft();
  rerenderKeep(o);
 }
 
@@ -482,7 +496,7 @@ document.addEventListener('click',async e=>{
  if(A==='startCheck'){S.check.freq=d.freq;loadDraft();go('check');return}
  if(A==='freq'){S.check.freq=d.freq;loadDraft();render();return}
  if(A==='ans'){S.check.ans[d.code]=S.check.ans[d.code]===d.v?undefined:d.v;if(S.check.ans[d.code]!=='ng'){delete S.check.photo[d.code];delete S.check.purl[d.code]}saveDraft();render();if(d.v==='ng'){const t=document.getElementById('n-'+d.code);t&&t.focus({preventScroll:true})}return}
- if(A==='rmPhoto2'){const o=d.id.indexOf('a:')===0?S.audit:(d.id.indexOf('e:')===0?S.equip:S.check);delete o.photo[d.code];delete o.purl[d.code];
+ if(A==='rmPhoto2'){const o=d.id.indexOf('a:')===0?S.audit:(d.id.indexOf('e:')===0?S.equip:(d.id.indexOf('x:')===0?S.fix:S.check));delete o.photo[d.code];delete o.purl[d.code];
   if(o===S.audit){saveAuditDraft();S.audit.openCats=openCatsNow()}else if(o===S.equip){saveEquipDraft();S.equip.openCats=openCatsNow()}else saveDraft();
   const y=window.scrollY;render();window.scrollTo({top:y});return}
  if(A==='submitCheck'){
@@ -554,6 +568,7 @@ document.addEventListener('input',e=>{const t=e.target;
  if(t.dataset.anote){S.audit.note[t.dataset.anote]=t.value;saveAuditDraft()}
  if(t.dataset.asugg){S.audit.sugg[t.dataset.asugg]=t.value;saveAuditDraft()}
  if(t.dataset.enote){S.equip.note[t.dataset.enote]=t.value;saveEquipDraft()}
+ if(t.dataset.fxnote)S.fix.note[t.dataset.fxnote]=t.value;
  if(t.dataset.emeas){S.equip.meas[t.dataset.emeas]=t.value;saveEquipDraft()}});
 document.addEventListener('change',async e=>{const t=e.target;
  if(t.id==='lgSt'){S.login.station=t.value;const s=S.login.stations.find(x=>x.code===t.value);S.login.name=mgrName(s&&s.mgr);render();return}
@@ -562,6 +577,7 @@ document.addEventListener('change',async e=>{const t=e.target;
  const f=t.files&&t.files[0];
  if(f&&t.dataset.aphoto){await takePhoto(S.audit,t.dataset.aphoto,S.audit.station,'a:',f);return}
  if(f&&t.dataset.ephoto){await takePhoto(S.equip,t.dataset.ephoto,S.equip.station,'e:',f);return}
+ if(f&&t.dataset.xphoto){await takePhoto(S.fix,t.dataset.xphoto,t.dataset.st,'x:',f);return}
  if(f&&t.dataset.photo){await takePhoto(S.check,t.dataset.photo,S.sess.station,'c:',f);return}
 });
 document.addEventListener('submit',async e=>{
@@ -577,6 +593,13 @@ document.addEventListener('submit',async e=>{
   if(r.role==='系統管理員'){await doLogin({pw});return}
   render();return}
  if(f==='mgr'){const name=v('lgName');if(!name){S.login.err='請輸入填報人姓名';render();return}await doLogin({pw:S.login.pw,station:v('lgSt'),name});return}
+ if(f==='closeIssue'){const id=v('fxId'),note=v('fxNote');
+  if(Object.keys(S.uploading).length){toastT('照片還在上傳，請稍候');return}
+  if(!note){toastT('請填寫結案說明');const t=document.getElementById('fxNote');t&&t.focus();return}
+  await call('closeIssue',S.token,id,note,S.fix.purl[id]||'');delete S.fix.note[id];delete S.fix.photo[id];delete S.fix.purl[id];
+  toastT('已結案');S.issues=await call('listIssues',S.token);try{await loadHome()}catch(_){}render();return}
+ if(f==='reopen'){const id=v('roId'),reason=v('roReason');if(!reason){toastT('請填寫取消結案的原因');return}
+  await call('reopenIssue',S.token,id,reason);toastT('已取消結案');S.issues=await call('listIssues',S.token);try{await loadHome()}catch(_){}render();return}
  if(f==='confirm'){const r=await call('confirmAudit',S.token,S.audit.result.recordId,v('cfName'));S.audit.result.confirmedBy=r.confirmedBy;toastT('站長已確認查核結果');render();return}
  if(f==='station'){await call('adminSaveStation',S.token,{code:v('fsCode'),region:v('fsRegion'),group:v('fsGroup'),name:v('fsName'),mgr:v('fsMgr'),email:v('fsEmail')});toastT('已儲存站點');S.sheet=null;S.admin=await call('adminData',S.token);render();return}
  if(f==='officer'){const regions=[...document.querySelectorAll('input[name=foReg]:checked')].map(x=>x.value).join('、');

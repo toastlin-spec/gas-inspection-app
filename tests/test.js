@@ -231,6 +231,30 @@ assert(G.sendManagerWeekly_(true).sent.length === 2); ok('試算表選單「立�
 assert(G.adminSendManagerWeekly(adm0.token).sent.length === 2); ok('系統管理員可在 App 管理設定立即寄送');
 throws(() => G.adminSendManagerWeekly(mz.token), /權限/, '油品主管不能觸發寄送');
 
+console.log('E5. 缺失結案（簡易版）');
+const tgt = G.listIssues(off.token).find(i => i.code === 'EQ-03-01' && i.status === '待處理');
+throws(() => G.closeIssue(off.token, tgt.id, ' '), /結案說明/, '沒有結案說明被拒絕');
+throws(() => G.closeIssue(mgr2.token, tgt.id, '已改善'), /權限/, '站長不能自己結案');
+throws(() => G.closeIssue(mz.token, tgt.id, '已改善'), /權限/, '油品主管不能結案');
+throws(() => G.closeIssue(off2.token, tgt.id, '已改善'), /權限/, '黃瓊瑤不能結案中區缺失');
+throws(() => G.closeIssue(off.token, 'ISS-000000-999', '已改善'), /找不到/, '不存在的缺失被拒絕');
+const fixUp = G.uploadPhoto(off.token, 'C04', tgt.id, PNG);
+const cl = G.closeIssue(off.token, tgt.id, '已更換卸油口鎖，現場確認上鎖', fixUp.url);
+let ci = G.listIssues(off.token).find(i => i.id === tgt.id);
+assert(cl.status === '已結案' && ci.status === '已結案' && ci.closer === '林佳賢' && ci.closed === G.today_() && ci.fixNote === '已更換卸油口鎖，現場確認上鎖' && ci.fixPhoto === fixUp.url && !ci.overdue); ok('安保專員結案：' + ci.id + '，結案人、日期、說明、改善後照片都寫入');
+assert(/林佳賢（安保專員）/.test(ci.log.at(-1).who) && /^結案：已更換卸油口鎖.*附改善後照片$/.test(ci.log.at(-1).text) && ci.log.length === 2); ok('處置紀錄新增：' + ci.log.at(-1).text);
+throws(() => G.closeIssue(off.token, tgt.id, '再結一次'), /已經結案/, '不能重複結案');
+assert(G.listIssues(mz.token).find(i => i.id === tgt.id).status === '已結案'); ok('油品主管看得到結案結果');
+throws(() => G.reopenIssue(off.token, tgt.id, ''), /原因/, '取消結案要填原因');
+throws(() => G.reopenIssue(mz.token, tgt.id, '誤按'), /權限/, '油品主管不能取消結案');
+G.reopenIssue(off.token, tgt.id, '誤按結案，尚未改善');
+ci = G.listIssues(off.token).find(i => i.id === tgt.id);
+assert(ci.status === '待處理' && !ci.closer && !ci.closed && ci.log.length === 3 && /取消結案：誤按/.test(ci.log.at(-1).text)); ok('取消結案：回到待處理，處置紀錄保留 ' + ci.log.length + ' 筆');
+throws(() => G.reopenIssue(off.token, tgt.id, 'x'), /還沒有結案/, '未結案的不能取消結案');
+const ac = G.closeIssue(adm0.token, tgt.id, '管理員確認已改善'); assert(ac.closer === '系統管理員'); ok('系統管理員也可以結案');
+const wk2 = G.managerWeeklyMail_({ name: '張三友', regions: ['中區'] }, G.listIssues(mz.token), G.today_(), G.addDays_(G.today_(), -7));
+assert(/本週結案 1 件/.test(wk2.body)); ok('每週彙整計入本週結案：' + wk2.body.split('\n').find(l => /本週新增/.test(l)));
+
 console.log('F. 工作表名稱');
 sheets['設定 '] = sheets['設定']; sheets['設定 '].name = '設定 '; delete sheets['設定'];
 assert(G.checkPassword('12345').ok); ok('工作表名稱前後有空白仍可讀取');

@@ -51,6 +51,7 @@ with sync_playwright() as p:
 
     pg.click('nav a[href="#issues"]'); pg.wait_for_selector('.issue')
     pg.click('.issue'); pg.wait_for_selector('.sheet'); ok('異常清單與詳情：' + pg.inner_text('.sheet h1'))
+    assert pg.locator('form[data-form="closeIssue"]').count() == 0; ok('站長的缺失詳情沒有結案按鈕')
     pg.screenshot(path=OUT + '5_issue.png')
     pg.click('.iconbtn')
 
@@ -142,6 +143,24 @@ with sync_playwright() as p:
     pg.click('text=檢查下一站'); pg.wait_for_selector('#equipSt')
     ok('檢查下一站：' + pg.eval_on_selector('#equipSt', 'e => e.options[e.selectedIndex].text'))
     pg.screenshot(path=OUT + '15_equip_officer.png')
+
+    pg.click('nav a[href="#issues"]'); pg.wait_for_selector('.issue')
+    n_open = pg.locator('.issue').count()
+    pg.click('.issue:has-text("接地電阻")'); pg.wait_for_selector('form[data-form="closeIssue"]')
+    pg.click('form[data-form="closeIssue"] button.primary'); pg.wait_for_selector('.toast:not([hidden])')
+    ok('沒填結案說明的提示：' + pg.inner_text('#toast'))
+    pg.fill('#fxNote', '已重新鎖固 2 號加油機接地線，複測 8Ω')
+    pg.set_input_files('form[data-form="closeIssue"] input[type=file]', OUT + 'photo.png'); pg.wait_for_selector('.sheet >> text=已上傳')
+    assert pg.input_value('#fxNote') == '已重新鎖固 2 號加油機接地線，複測 8Ω'; ok('拍改善後照片後，結案說明不會消失')
+    pg.screenshot(path=OUT + '19_close_form.png')
+    pg.click('form[data-form="closeIssue"] button.primary'); pg.wait_for_selector('.sheet >> text=已結案')
+    ok('結案完成：' + pg.inner_text('.sheet section.panel.stack >> nth=-1').replace(chr(10), ' ')[:60])
+    pg.screenshot(path=OUT + '20_closed.png')
+    pg.fill('#roReason', '測試取消'); pg.click('form[data-form="reopen"] button'); pg.wait_for_selector('form[data-form="closeIssue"]')
+    ok('取消結案後回到可結案狀態')
+    pg.fill('#fxNote', '已重新鎖固接地線'); pg.click('form[data-form="closeIssue"] button.primary'); pg.wait_for_selector('.sheet >> text=已結案')
+    pg.click('.iconbtn')
+    assert pg.locator('.issue').count() == n_open - 1; ok('未結案清單少 1 件（%d → %d）' % (n_open, n_open - 1))
 
     pg.click('text=登出'); pg.wait_for_selector('button[data-act="pickRole"]')
     pg.click('button[data-r="油品主管"]'); pg.fill('#pw', '55555'); pg.click('text=下一步'); pg.wait_for_selector('.who:not(.role)')

@@ -382,7 +382,7 @@ function submitCheck(token, payload) {
  * 站長只能上傳自己的站；安保專員只能上傳負責區域的站。
  */
 function uploadPhoto(token, stationCode, itemCode, dataUrl) {
-  const sess = session_(token, ['站長', '安保專員']);
+  const sess = session_(token, ['站長', '安保專員', '系統管理員']);
   const st = scopeStations_(sess).find(s => s.code === String(stationCode || ''));
   if (!st) throw new Error('沒有權限上傳這個站點的照片');
   const name = (sess.role === '站長' ? 'CK' : 'AU') + '-' + fmt_(new Date(), 'yyyyMMdd-HHmmss') + '-' + st.code + '_' + clean_(itemCode, 20);
@@ -1103,6 +1103,7 @@ function issuesInScope_(codes) {
         src: String(r['來源'] || ''), code: String(r['項目代碼'] || ''), title: String(r['異常說明'] || ''),
         risk: String(r['風險等級'] || ''), status: status, created: dateStr_(r['建立日期']), due: due,
         closed: dateStr_(r['結案日期']), photo: String(r['異常照片'] || ''), log: log,
+        fixNote: String(r['處置說明'] || ''), fixPhoto: String(r['改善後照片'] || ''), closer: String(r['結案人'] || ''),
         overdue: status !== '已結案' && !!due && due < today
       };
     });
@@ -1169,6 +1170,56 @@ function managerWeeklyMail_(m, issues, today, weekAgo) {
     subject: `【每週缺失彙整】${region} ${today}：未結案 ${open.length} 件` + (overdue.length ? `（逾期 ${overdue.length} 件）` : ''),
     body: parts.filter((x, k, a) => !(x === '' && a[k - 1] === '')).join('\n')
   };
+}
+
+/* ============================== 異常結案（簡易版：安保專員、系統管理員） ============================== */
+
+/** 結案：寫入處置說明、改善後照片（選填）、結案人、結案日期，並在處置紀錄加一筆。 */
+function closeIssue(token, id, note, photo) {
+  const sess = session_(token, ['安保專員', '系統管理員']);
+  note = clean_(note, 500);
+  if (!note) throw new Error('請填寫結案說明（例如改善方式或確認結果）');
+  const row = issueRow_(sess, id);
+  if (String(row['狀態']) === '已結案') throw new Error('這筆缺失已經結案了');
+  const url = photoValue_(photo, String(row['站點代碼']), 'FIX-' + fmt_(new Date(), 'yyyyMMdd-HHmmss') + '_' + clean_(id, 30));
+  return withLock_(() => {
+    const cur = issueRow_(sess, id);
+    if (String(cur['狀態']) === '已結案') throw new Error('這筆缺失已經結案了');
+    const stamp = fmt_(new Date(), 'yyyy-MM-dd HH:mm:ss');
+    updateRow_('異常追蹤', cur._row, {
+      '狀態': '已結案', '處置說明': note, '改善後照片': url || String(cur['改善後照片'] || ''), '結案人': sess.name, '結案日期': today_(),
+      '處置紀錄': JSON.stringify(issueLog_(cur).concat([{ t: stamp, who: sess.name + '（' + sess.role + '）', text: '結案：' + note + (url ? '，附改善後照片' : '') }]))
+    });
+    return { id: id, status: '已結案', closer: sess.name, closed: today_() };
+  });
+}
+
+/** 取消結案（按錯時使用）：狀態回到「待處理」，清除結案人與結案日期，保留處置紀錄。 */
+function reopenIssue(token, id, reason) {
+  const sess = session_(token, ['安保專員', '系統管理員']);
+  reason = clean_(reason, 300);
+  if (!reason) throw new Error('請填寫取消結案的原因');
+  return withLock_(() => {
+    const cur = issueRow_(sess, id);
+    if (String(cur['狀態']) !== '已結案') throw new Error('這筆缺失還沒有結案');
+    const stamp = fmt_(new Date(), 'yyyy-MM-dd HH:mm:ss');
+    updateRow_('異常追蹤', cur._row, {
+      '狀態': '待處理', '結案人': '', '結案日期': '',
+      '處置紀錄': JSON.stringify(issueLog_(cur).concat([{ t: stamp, who: sess.name + '（' + sess.role + '）', text: '取消結案：' + reason }]))
+    });
+    return { id: id, status: '待處理' };
+  });
+}
+
+function issueRow_(sess, id) {
+  const row = readTable_('異常追蹤').rows.find(r => String(r['異常編號']) === String(id || ''));
+  if (!row) throw new Error('找不到缺失 ' + id);
+  if (!scopeStations_(sess).some(s => s.code === String(row['站點代碼']))) throw new Error('沒有權限處理這個站點的缺失');
+  return row;
+}
+
+function issueLog_(row) {
+  try { const v = JSON.parse(row['處置紀錄'] || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; }
 }
 
 /* ============================== 管理設定（系統管理員） ============================== */
