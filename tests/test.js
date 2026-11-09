@@ -213,6 +213,21 @@ assert(!G.checkPassword('55555').ok && p.some(x => x.level === '錯誤' && /沒�
 cfg.data[kp][1] = '98765'; p = G.adminCheckData(adm0.token);
 assert(G.checkPassword('98765').role === '安保專員' && p.some(x => /不能和站長、安保專員/.test(x.msg))); ok('密碼與安保專員相同時列為錯誤');
 cfg.data[kp] = ['登入密碼_油品主管', '55555', '', '']; ppl.data.splice(ppl.data.length - 2, 2);
+// 通知：高風險即時信與每週缺失彙整
+assert(G.adminCheckData(adm0.token).some(x => /張三友 沒有 Email/.test(x.msg))); ok('資料檢查提醒油品主管沒有 Email');
+G.adminSaveOfficer(adm0.token, { role: '油品主管', originalName: '張三友', name: '張三友', regions: '中區', email: 'chang@example.com' });
+const mb = log.mails.length;
+const hr = G.submitEquip(mgr2.token, { station: 'C04', answers: ea({ 'EQ-03-01': { result: 'ng', note: '92 卸油口未上鎖' } }) });
+const hm = log.mails.at(-1);
+assert(hr.high === 1 && log.mails.length === mb + 1 && /chang@example\.com/.test(hm.to) && /c04@example\.com/.test(hm.to) && !/lin\.k@example\.com/.test(hm.to)); ok('高風險缺失同時寄給中區經理張三友（不寄給北區經理）：' + hm.to);
+let wk = G.sendManagerWeekly();
+const wm = log.mails.filter(m => /每週缺失彙整/.test(m.subject));
+assert(wk.sent.length === 2 && wk.skipped.some(x => /劉信志：沒有 Email/.test(x)) && wm.length === 2); ok('每週彙整寄出 ' + wk.sent.length + ' 封：' + wk.sent.join('；') + '｜略過：' + wk.skipped.join('、'));
+const zm = wm.find(m => m.to === 'chang@example.com'), lm = wm.find(m => m.to === 'lin.k@example.com');
+assert(/^【每週缺失彙整】中區 \d{4}-\d{2}-\d{2}：未結案 \d+ 件/.test(zm.subject) && /【本週新增】/.test(zm.body) && /台中站｜高風險｜營運設備檢查｜儲油設備：卸油口蓋上鎖（92 卸油口未上鎖）/.test(zm.body) && /【各站未結案件數】\n台中站 \d+ 件/.test(zm.body) && !/南測/.test(zm.body)); ok('張三友的彙整只有中區：' + zm.subject);
+assert(/目前沒有未結案的缺失/.test(lm.body)); ok('北區沒有缺失時寫明「目前沒有未結案的缺失」');
+wk = G.sendManagerWeekly(); assert(wk.sent.length === 0 && /6 天內已寄過/.test(wk.skipped[0])); ok('6 天內重複呼叫不會再寄（避免被濫用）');
+assert(G.sendManagerWeekly_(true).sent.length === 2); ok('試算表選單「立即寄送」不受限制');
 
 console.log('F. 工作表名稱');
 sheets['設定 '] = sheets['設定']; sheets['設定 '].name = '設定 '; delete sheets['設定'];

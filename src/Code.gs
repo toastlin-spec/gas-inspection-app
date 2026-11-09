@@ -151,12 +151,21 @@ function onOpen() {
     .createMenu('巡檢系統')
     .addItem('補上缺少的欄位', 'menuSetupSheets')
     .addItem('檢查資料', 'menuCheckData')
+    .addSeparator()
+    .addItem('立即寄送油品主管每週缺失彙整', 'menuSendManagerWeekly')
     .addToUi();
 }
 
 function menuSetupSheets() {
   const added = setupSheets_();
   SpreadsheetApp.getUi().alert(added.length ? '已補上欄位：\n' + added.join('\n') : '欄位完整，不需要補上。');
+}
+
+/** 從試算表選單手動寄出（測試用）；不受每週一次的限制。 */
+function menuSendManagerWeekly() {
+  const ui = SpreadsheetApp.getUi(); // 只能從試算表選單執行
+  const r = sendManagerWeekly_(true);
+  ui.alert(r.sent.length ? '已寄出：\n' + r.sent.join('\n') + (r.skipped.length ? '\n\n未寄出：\n' + r.skipped.join('\n') : '') : '沒有寄出任何信件：\n' + (r.skipped.join('\n') || '沒有啟用中的油品主管'));
 }
 
 function menuCheckData() {
@@ -440,12 +449,13 @@ function nextIssueSeq_(now) {
   return max + 1;
 }
 
-/** 高風險異常立即寄信給站長與負責區域的安保專員；沒有 Email 時略過。 */
+/** 高風險異常立即寄信給站長、負責區域的安保專員與該區油品主管；沒有 Email 時略過。 */
 function notifyHighRisk_(station, issueRows, reporter, sourceLabel) {
   const high = issueRows.filter(r => r['風險等級'] === '高');
   if (!high.length) return false;
   const officer = officers_().find(o => o.on && o.regions.indexOf(station.region) >= 0);
-  const to = [station.email, officer && officer.email].filter(isEmail_);
+  const mgrs = managers_().filter(m => m.on && m.regions.indexOf(station.region) >= 0).map(m => m.email);
+  const to = [station.email, officer && officer.email].concat(mgrs).filter(isEmail_).filter((x, i, a) => a.indexOf(x) === i);
   if (!to.length || MailApp.getRemainingDailyQuota() < to.length) return false;
   const items = items_();
   const lines = high.map(r => {
@@ -1098,6 +1108,69 @@ function issuesInScope_(codes) {
     });
 }
 
+/* ============================== 油品主管每週缺失彙整 ============================== */
+
+/**
+ * 每週寄給各區油品主管：負責區域的未結案缺失、逾期、本週新增與本週結案。
+ * 設定方式：Apps Script 左側「觸發條件」→ 新增觸發條件 → 函式選 sendManagerWeekly、事件來源「時間驅動」、
+ * 「週計時器」，選星期與時段。
+ * 為避免被重複呼叫，6 天內只會寄一次；要測試請用試算表選單「巡檢系統 › 立即寄送油品主管每週缺失彙整」。
+ */
+function sendManagerWeekly() {
+  return sendManagerWeekly_(false);
+}
+
+function sendManagerWeekly_(force) {
+  const props = PropertiesService.getScriptProperties();
+  const last = Number(props.getProperty('MANAGER_WEEKLY_LAST') || 0);
+  if (!force && Date.now() - last < 6 * 86400000) return { sent: [], skipped: ['6 天內已寄過，略過'] };
+  const today = today_();
+  const weekAgo = addDays_(today, -7);
+  const stations = activeStations_();
+  const out = { sent: [], skipped: [] };
+  managers_().filter(m => m.on).forEach(m => {
+    if (!isEmail_(m.email)) { out.skipped.push(m.name + '：沒有 Email'); return; }
+    if (!m.regions.length) { out.skipped.push(m.name + '：沒有負責區域'); return; }
+    if (MailApp.getRemainingDailyQuota() < 1) { out.skipped.push(m.name + '：今日寄信額度已用完'); return; }
+    const codes = {};
+    stations.filter(s => m.regions.indexOf(s.region) >= 0).forEach(s => { codes[s.code] = true; });
+    const mail = managerWeeklyMail_(m, issuesInScope_(codes), today, weekAgo);
+    MailApp.sendEmail({ to: m.email, subject: mail.subject, body: mail.body });
+    out.sent.push(m.name + '（' + m.regions.join('、') + '）→ ' + m.email);
+  });
+  if (out.sent.length) props.setProperty('MANAGER_WEEKLY_LAST', String(Date.now()));
+  return out;
+}
+
+function managerWeeklyMail_(m, issues, today, weekAgo) {
+  const open = issues.filter(i => i.status !== '已結案');
+  const overdue = open.filter(i => i.overdue).sort((a, b) => String(a.due).localeCompare(String(b.due)));
+  const high = open.filter(i => i.risk === '高');
+  const added = issues.filter(i => i.created > weekAgo).sort((a, b) => String(b.created).localeCompare(String(a.created)));
+  const closed = issues.filter(i => i.status === '已結案' && i.closed > weekAgo);
+  const region = m.regions.join('、');
+  const days = d => Math.round((Date.parse(today) - Date.parse(d)) / 86400000);
+  const line = i => `・${i.stationName}｜${i.risk}風險｜${i.src}｜${i.title}（期限 ${i.due}${i.overdue ? '，逾期 ' + days(i.due) + ' 天' : ''}）`;
+  const byStation = {};
+  open.forEach(i => { byStation[i.stationName] = (byStation[i.stationName] || 0) + 1; });
+  const parts = [
+    `${m.name} 您好：`, '',
+    `以下是${region}截至 ${today} 的缺失狀況。`, '',
+    '【總覽】',
+    `未結案 ${open.length} 件（逾期 ${overdue.length} 件、高風險 ${high.length} 件）`,
+    `本週新增 ${added.length} 件、本週結案 ${closed.length} 件`, ''
+  ];
+  if (overdue.length) parts.push('【逾期未改善】', ...overdue.slice(0, 50).map(line), overdue.length > 50 ? `……另有 ${overdue.length - 50} 件` : '', '');
+  if (added.length) parts.push('【本週新增】', ...added.slice(0, 50).map(line), added.length > 50 ? `……另有 ${added.length - 50} 件` : '', '');
+  if (open.length) parts.push('【各站未結案件數】', Object.keys(byStation).sort((a, b) => byStation[b] - byStation[a]).map(n => `${n} ${byStation[n]} 件`).join('、'), '');
+  else parts.push('目前沒有未結案的缺失。', '');
+  parts.push('詳細內容與照片請登入加油站巡檢 App，身分選「油品主管」查看。', '此信由加油站巡檢系統每週自動寄出。');
+  return {
+    subject: `【每週缺失彙整】${region} ${today}：未結案 ${open.length} 件` + (overdue.length ? `（逾期 ${overdue.length} 件）` : ''),
+    body: parts.filter((x, k, a) => !(x === '' && a[k - 1] === '')).join('\n')
+  };
+}
+
 /* ============================== 管理設定（系統管理員） ============================== */
 
 function adminData(token) {
@@ -1266,6 +1339,7 @@ function checkData_() {
     if (!mgrs.some(m => m.on)) add('錯誤', '人員', '已設定油品主管登入密碼，但「人員」工作表沒有啟用中的油品主管（角色欄請填「油品主管」）');
   } else if (mgrs.length) add('錯誤', '設定', '「人員」已有油品主管 ' + mgrs.map(m => m.name).join('、') + '，但「設定」工作表沒有「登入密碼_油品主管」這一列，油品主管無法登入');
   mgrs.forEach(m => {
+    if (m.on && !isEmail_(m.email)) add('提醒', '人員', '油品主管 ' + m.name + ' 沒有 Email，收不到高風險通知與每週缺失彙整');
     if (!m.regions.length) add('錯誤', '人員', '油品主管 ' + m.name + ' 的負責區域沒有填北區、中區或南區，登入後看不到任何站');
     if (!m.on) add('提醒', '人員', '油品主管 ' + m.name + ' 的「啟用」為否，登入名單不會出現');
   });
