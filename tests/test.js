@@ -9,6 +9,7 @@ console.log('A. 資料結構');
 let p;
 const added = G.setupSheets_();
 ok('setupSheets_ 補上欄位：' + (added.join('；') || '不需要'));
+assert(added.some(x => /營運設備檢查 82 項/.test(x)) && G.setupSheets_().every(x => !/營運設備/.test(x))); ok('setupSheets_ 自動加入營運設備檢查 82 項，第二次不重複加入');
 p = G.checkData_();
 assert(!p.some(x => x.level === '錯誤' && x.sheet !== '指令碼屬性'), JSON.stringify(p)); ok('補完後沒有錯誤，提醒 ' + p.length + ' 項：' + p.map(x => x.msg).join(' / '));
 
@@ -55,7 +56,7 @@ throws(() => G.adminData(off.token), /權限/, '安保專員不能進管理設�
 
 console.log('E. 管理設定');
 const adm = G.login({ pw: '77777' });
-let A = G.adminData(adm.token); assert(A.stations.length === 71 && A.officers.length === 2 && A.items.length === 58); ok('管理資料：71 站、2 位安保專員、58 個檢查項目');
+let A = G.adminData(adm.token); assert(A.stations.length === 71 && A.officers.length === 2 && A.items.length === 140); ok('管理資料：71 站、2 位安保專員、140 個檢查項目（含營運設備 82 項）');
 const code = G.adminSaveStation(adm.token, { region: '北區', group: '北一組', name: '測試站', mgr: '王測試', email: '' }); assert(code === 'N21'); ok('新增北區站點，代碼 ' + code);
 throws(() => G.adminSaveStation(adm.token, { region: '北區', name: '測試站', mgr: 'x' }), /同名/, '重複站名被拒絕');
 G.adminSaveStation(adm.token, { code: 'N21', region: '北區', group: '北二組', name: '測試站', mgr: '王測試', email: 'n21@example.com' });
@@ -120,6 +121,56 @@ assert(/李丞芯/.test(xs[2][3]) && /其他：急救箱鑰匙/.test(xs.find(r =
 assert(log.trashed.includes(X.id) && log.images.length === 2); ok('暫存試算表已刪除；全部匯出也嵌入照片');
 throws(() => G.exportAudit(off2.token, au.recordId), /權限/, '黃瓊瑤不能匯出中區查核');
 assert(G.listAudits(adm0.token).length === 2); ok('管理員可看到查核紀錄');
+
+console.log('E3. 營運設備現場重點項目檢查');
+const ef = G.getEquipForm(off.token);
+const cats = [...new Set(ef.items.map(i => i.cat))];
+assert(ef.items.length === 82 && cats.length === 12 && cats[0] === '一、營業場所' && cats[11] === '十二、特別規定'); ok(`安保專員表單：${ef.stations.length} 站、12 類 82 項（${ef.title}）`);
+assert(ef.items.find(i => i.code === 'EQ-03-12').text === '陰井之油氣濃度未逾 25%LEL' && ef.items.find(i => i.code === 'EQ-03-12').no === '3-12'); ok('項目代碼 EQ-03-12 對應紙本「三、儲油設備 12.」');
+assert(ef.items.filter(i => i.unit).length === 7 && ef.items.find(i => i.code === 'EQ-08-02').unit === 'Ω'); ok('7 個量測項目帶單位（絕緣電阻、LEL、接地電阻）');
+const mf = G.getEquipForm(mgr2.token); assert(mf.stations.length === 1 && mf.stations[0].code === 'C04'); ok('站長表單只有自己的站');
+throws(() => G.getEquipForm(adm0.token), /權限/, '系統管理員不能填設備檢查');
+const ea = (over = {}) => ef.items.map(i => Object.assign({ code: i.code, result: i.cat.indexOf('十、') === 0 ? 'na' : 'ok' }, over[i.code] || {}));
+throws(() => G.submitEquip(off.token, { station: 'C04', answers: ea().slice(2) }), /還有 2 項未填寫/, '漏填被拒絕');
+throws(() => G.submitEquip(mgr2.token, { station: 'C06', answers: ea() }), /自己的站點/, '站長不能檢查其他站');
+throws(() => G.submitEquip(off2.token, { station: 'C04', answers: ea() }), /負責區域/, '黃瓊瑤不能檢查中區站點');
+const mailsBefore = log.mails.length;
+const eq = G.submitEquip(off.token, { station: 'C04', answers: ea({
+  'EQ-08-02': { result: 'ng', measure: '38', note: '2 號加油機接地線鬆脫', photo: PNG },
+  'EQ-07-04': { result: 'ng' },
+  'EQ-08-01': { result: 'ok', measure: '12Ω' } }) });
+assert(/^EI-\d{8}-\d{6}-C04$/.test(eq.recordId) && eq.ngCount === 2 && eq.naCount === 3 && eq.okCount === 77 && eq.high === 1); ok(`送出：${eq.recordId}，良好 ${eq.okCount}、不良 ${eq.ngCount}、無此設備 ${eq.naCount}`);
+assert(eq.mailed && log.mails.length === mailsBefore + 1 && /營運設備檢查/.test(log.mails.at(-1).body) && /檢查人：林佳賢/.test(log.mails.at(-1).body)); ok('高風險不良（加油機接地電阻）寄出通知');
+const eqDet = sheets['檢查明細'].data.filter(r => r[0] === eq.recordId), mh = sheets['檢查明細'].data[0];
+const d0802 = eqDet.find(r => r[1] === 'EQ-08-02'), d0801 = eqDet.find(r => r[1] === 'EQ-08-01');
+assert(eqDet.length === 82 && d0802[mh.indexOf('結果')] === '不良' && d0802[mh.indexOf('說明')] === '量測值 38 Ω；2 號加油機接地線鬆脫' && /drive\.google\.com/.test(d0802[mh.indexOf('照片連結')])); ok('明細 82 列；量測值與缺失說明合併寫入：' + d0802[mh.indexOf('說明')]);
+assert(d0801[mh.indexOf('說明')] === '量測值 12Ω'); ok('量測值已含單位時不重複補單位');
+const eqIss = G.listIssues(off.token).filter(i => i.src === '營運設備檢查');
+const i0704 = eqIss.find(i => i.code === 'EQ-07-04'), i0802 = eqIss.find(i => i.code === 'EQ-08-02');
+assert(eqIss.length === 2 && i0704.title === '標示設備：雨棚高度標誌完好' && i0704.risk === '低' && i0802.risk === '高' && /量測值 38 Ω/.test(i0802.title)); ok('建立 2 筆異常：' + eqIss.map(i => `${i.code}[${i.risk}] ${i.title}`).join('／'));
+const rec = sheets['檢查紀錄'].data.find(r => r[0] === eq.recordId), rh = sheets['檢查紀錄'].data[0];
+assert(rec[rh.indexOf('表單類型')] === '營運設備檢查表' && rec[rh.indexOf('版本')] === '115' && rec[rh.indexOf('異常數')] === 2); ok('檢查紀錄：表單類型「營運設備檢查表」、版本 115');
+assert(G.getEquipForm(off.token).stations.find(s => s.code === 'C04').lastEquip.recordId === eq.recordId && G.getHome(mgr2.token).stations[0].lastEquip.ng === 2); ok('表單與站長首頁顯示最近一次檢查');
+assert(G.listEquips(mgr2.token).length === 1 && G.listEquips(off2.token).length === 0); ok('站長看得到自己站的紀錄，北區專員看不到');
+const es = G.submitEquip(mgr2.token, { station: 'C04', answers: ea() }); assert(es.ngCount === 0 && es.high === 0); ok('站長也能自行填寫，全部良好不建立異常');
+assert(es.recordId !== eq.recordId && sheets['檢查明細'].data.filter(r => r[0] === es.recordId).length === 82); ok('同一秒送出兩次時紀錄編號不重複：' + es.recordId);
+const imgBefore = log.images.length;
+ex = G.exportEquip(off.token, eq.recordId, 'all'); X = log.created.at(-1);
+assert(/^營運設備檢查表_台中站_\d{8}\.xlsx$/.test(ex.filename) && X.sheets.map(s => s.name).join() === '營運設備檢查表,不良改善事項'); ok('全部匯出：' + ex.filename + '（' + X.sheets.map(s => s.name).join('、') + '）');
+const es1 = X.sheets[0].data;
+assert(/115 年度「加油（氣）站查核與輔導」/.test(es1[0][0]) && es1[1][0] === '加油站營運設備現場重點項目檢查表紀錄表' && es1[4][0] === '設備名稱' && es1.length === 5 + 82); ok('紀錄表比照紙本：標題、表頭與 82 項');
+const r0802 = es1.find(r => r[1] === '2. 加油機接地電阻 ＜25Ω'), r1001 = es1.find(r => r[0] === '十、洗車機');
+assert(r0802[2] === 'X' && r0802[3] === '量測值 38 Ω；2 號加油機接地線鬆脫' && r1001[2] === '無此設備' && es1[5][2] === 'V'); ok('結果欄依紙本標示 V／X／無此設備，缺失說明帶入');
+const es2 = X.sheets[1].data;
+assert(es2[4][2] === '不良說明' && es2.length === 7 && es2.find(r => r[0] === '8-2')[1].indexOf('八、靜電（電氣）接地設備：') === 0 && log.images.length === imgBefore + 1); ok('不良改善事項：2 項，含類別與照片');
+ex = G.exportEquip(off.token, eq.recordId, 'ng'); X = log.created.at(-1);
+assert(/^營運設備不良改善事項_台中站_\d{8}\.xlsx$/.test(ex.filename) && X.sheets.length === 1 && log.trashed.includes(X.id)); ok('只匯出不良項目：' + ex.filename);
+ex = G.exportEquip(mgr2.token, es.recordId, 'all'); X = log.created.at(-1);
+assert(X.sheets[1].data[5][1] === '本次檢查沒有不良項目'); ok('站長可匯出自己站的紀錄；沒有不良時顯示提示');
+throws(() => G.exportEquip(off2.token, eq.recordId, 'all'), /權限/, '黃瓊瑤不能匯出中區檢查');
+throws(() => G.exportEquip(off.token, au.recordId, 'all'), /找不到/, 'SL-H015 紀錄不能用設備檢查匯出');
+G.adminToggle(adm0.token, 'items', 'EQ-11-02');
+assert(G.getEquipForm(off.token).items.length === 81); ok('停用項目後表單剩 81 項');
 
 console.log('F. 工作表名稱');
 sheets['設定 '] = sheets['設定']; sheets['設定 '].name = '設定 '; delete sheets['設定'];

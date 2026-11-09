@@ -1,7 +1,8 @@
 /**
  * 加油站巡檢 App — 後端（第一階段）
  *
- * 功能：密碼登入、首頁狀態、自主檢查送出（含照片）、SL-H015 查核與匯出 Excel、異常清單（唯讀）、管理設定、資料檢查。
+ * 功能：密碼登入、首頁狀態、自主檢查送出（含照片）、SL-H015 查核與匯出 Excel、營運設備現場重點項目檢查與匯出 Excel、
+ *       異常清單（唯讀）、管理設定、資料檢查。
  * 資料全部存在綁定的 Google 試算表；照片存在指令碼屬性 PHOTO_FOLDER_ID 指定的資料夾。
  *
  * 指令碼屬性（專案設定 → 指令碼屬性）：
@@ -65,6 +66,57 @@ const DEFAULT_SUGGEST = {
   'H015-G01': '依能源局「加油站營運設備自行安全檢查手冊」確實填寫，紀錄保存 1 年以上。'
 };
 const OTHER_SUGGEST = '依現場缺失內容限期改善，完成後拍照回報。';
+
+/* 營運設備現場重點項目檢查表（115 年度「加油（氣）站查核與輔導」紀錄表第 1～3 頁） */
+const EQUIP_FORM = '營運設備檢查表';
+const EQUIP_VERSION = '115';
+const EQUIP_LABEL = { ok: '良好', ng: '不良', na: '無此設備' };
+const EQUIP_MARK = { '良好': 'V', '不良': 'X', '無此設備': '無此設備' };
+const EQUIP_TITLE = '加油站營運設備現場重點項目檢查表紀錄表';
+const EQUIP_PROGRAM = EQUIP_VERSION + ' 年度「加油（氣）站查核與輔導」';
+/** 預設項目：[類別, [[檢查內容, 風險等級, 量測值單位], …]]。項目代碼 EQ-類別序-項次，例如 EQ-03-12。
+ *  第一次使用時寫入試算表「檢查項目」，之後以試算表為準（可停用項目、調整風險等級）。 */
+const EQUIP_CATS = [
+  ['一、營業場所', [
+    ['營業室無儲存有輕質之揮發性小包裝油品', '高'], ['站屋、油泵島之地面無油漬', '中'], ['排水溝無浮油／油漬', '中'],
+    ['油品貯藏室無其他非油品類可燃物', '中'], ['油品貯藏室防火門無變形、損壞', '中'], ['地坪（路面）完好無嚴重龜裂、坑洞', '低']]],
+  ['二、電氣設備', [
+    ['配電盤操作面板前無堆置雜物且開關箱關閉', '中'], ['配電盤開關接線端子接觸良好', '中'], ['配電盤各分路絕緣電阻數值符合規定', '中', 'MΩ'],
+    ['無非防爆性電氣設備或器具置於第一種場所或第二種場所範圍使用', '高'], ['電氣設備箱頭、插座無損壞，線路無鬆散裸露', '高'],
+    ['電氣設備漏電斷路器試鈕作用正常', '高'], ['電氣設備接地裝置無脫落', '高'], ['避雷設施接地裝置無脫落', '中'],
+    ['緊急照明燈功能正常', '中'], ['油品儲藏室防爆開關及防爆燈具完好', '高']]],
+  ['三、儲油設備', [
+    ['卸油口蓋上鎖', '高'], ['卸油口蓋及墊圈完好', '中'], ['卸油口油品類別標識正確完好', '中'], ['卸油口盛油盤內無雜物及卸水口關閉', '中'],
+    ['卸油口靜電接地棒無毀損、鍍銅無斷裂', '高'], ['儲油槽陰井蓋板完好', '中'], ['儲油槽陰井內無積水或積油', '中'], ['陰井內部及壁板完整', '低'],
+    ['陰井蓋板油品類別顏色標識正確完好', '低'], ['手動量油口蓋墊圈完好、蓋妥（放蓋後上鎖）', '中'], ['陰井內油管法蘭及接頭無滲漏', '高'],
+    ['陰井之油氣濃度未逾 25%LEL', '高', '%LEL'], ['沈油泵馬達等接線盒內無積水、積油', '高'], ['排氣（通氣）管防雨蓋完好', '低']]],
+  ['四、加油設備（加油機）', [
+    ['加油機底座穩固', '中'], ['加油機底座四周無漏油跡象', '高'], ['加油槍及橡皮管無滲漏油、無破損', '高'], ['加油槍之加滿自動跳停裝置功能良好', '高'],
+    ['加油橡皮管吊管回收裝置功能良好', '低'], ['運轉無異常', '中'], ['加油機內無積水、無積油及無油氣，設施接頭無滲漏', '高'], ['加油機接地裝置無脫落', '高'],
+    ['傳動皮帶鬆緊度適當【自吸式】無龜裂', '低'], ['加油機及電氣接線孔配電管接頭、防爆軟管接頭無鬆脫、預留管口密封', '高'], ['沈油泵加油機緊急遮斷閥固定', '高']]],
+  ['五、油氣回收設備', [
+    ['第一階段油氣回收快速接頭蓋上鎖', '中'], ['第一階段油氣回收口快速接頭蓋墊圈及操作良好', '中'], ['油氣回收槍及同軸皮管無滲漏', '中']]],
+  ['六、消防設備（滅火器）', [
+    ['放置定位', '中'], ['消防設備前無堆置雜物', '中'], ['滅火器及藥劑未逾有效期限', '高'], ['滅火器本體無損傷、鏽蝕', '中'], ['噴嘴口無異物堵塞', '中'],
+    ['噴嘴把手靈活（加壓式滅火器）', '中'], ['橡皮管無損傷、接頭旋緊、無鏽蝕／裂痕', '中'], ['封條完好', '低'], ['蓄壓式滅火器壓力指示正常（指針在綠色範圍）', '高']]],
+  ['七、標示設備', [
+    ['「熄火加油」及「嚴禁煙火」標誌完好', '中'], ['卸油區地面黃線標示清楚', '低'], ['車輛出入口立牆標誌及地面標線完好', '低'], ['雨棚高度標誌完好', '低'],
+    ['燈柱（框架）及基座完好、無鏽損', '低'], ['接線蓋板完好', '中']]],
+  ['八、靜電（電氣）接地設備', [
+    ['收油口靜電接地電阻 ＜50Ω', '高', 'Ω'], ['加油機接地電阻 ＜25Ω', '高', 'Ω'], ['配電盤接地電阻 ＜50Ω', '高', 'Ω'],
+    ['避雷針接地電阻 ＜10Ω', '中', 'Ω'], ['空氣壓縮機接地電阻 ＜50Ω', '中', 'Ω']]],
+  ['九、空氣壓縮機', [
+    ['運轉無異狀', '低'], ['接頭無漏氣', '低'], ['壓力計壓力指示正常', '中'], ['曲軸箱之機油油位適當', '低'], ['空壓機接地裝置無脫落', '中'],
+    ['螺栓及管線接頭無鬆動', '低'], ['皮帶鬆緊度適當、無龜裂', '低'], ['壓力釋放並啟動洩壓閥，動作正常', '高'], ['安全閥之作用正常', '高'], ['防護網完好', '中']]],
+  ['十、洗車機', [['運轉無異狀', '低'], ['漏電斷路器測試正常', '高'], ['緊急停止裝置測試正常', '高']]],
+  ['十一、發電機', [['冷卻水、潤滑油及電瓶液位正常', '低'], ['燃油量充足', '低']]],
+  ['十二、特別規定', [
+    ['每日盤查各儲油槽油品存量、並作成紀錄', '中'], ['每月盤查儲油槽存量及自主檢測測漏管油氣濃度（LEL%）並紀錄', '中'],
+    ['每年應依消防法規定，由領有證照之專業人員執行消防檢查，並檢附檢查報告，加油站自行安全檢查負責人應檢查相關紀錄與報告是否保存完好', '中']]]
+];
+const EQUIP_UNIT = {};
+EQUIP_CATS.forEach((c, ci) => c[1].forEach((x, k) => { if (x[2]) EQUIP_UNIT[equipCode_(ci + 1, k + 1)] = x[2]; }));
+function equipCode_(cat, no) { return 'EQ-' + pad_(cat, 2) + '-' + pad_(no, 2); }
 
 const REQUIRED_HEADERS = {
   '站點': ['站點代碼', '站名', '區域', '組別', '站長', '站長Email', '啟用', '備註'],
@@ -210,10 +262,11 @@ function getHome(token) {
 
   const items = items_().filter(i => i.on && i.form === '自主檢查').map(publicItem_);
   const audits = auditSummary_(codes);
+  const equips = equipSummary_(codes);
   return {
     session: sess,
     today: today,
-    stations: stations.map(s => Object.assign(publicStation_(s), status[s.code], { lastAudit: audits.last[s.code] || null, auditedThisQuarter: !!audits.quarter[s.code] })),
+    stations: stations.map(s => Object.assign(publicStation_(s), status[s.code], { lastAudit: audits.last[s.code] || null, auditedThisQuarter: !!audits.quarter[s.code], lastEquip: equips.last[s.code] || null })),
     counts: counts,
     audit: { quarter: quarterLabel_(today), done: Object.keys(audits.quarter).length, total: stations.length, recent: audits.recent.slice(0, 5) },
     items: items,
@@ -392,7 +445,7 @@ function notifyHighRisk_(station, issueRows, reporter, sourceLabel) {
   MailApp.sendEmail({
     to: to.join(','),
     subject: `【高風險異常】${station.name} ${high.length} 項`,
-    body: `${station.region}${station.group} ${station.name}（${sourceLabel === 'SL-H015' ? '查核人' : '填報人'}：${reporter}）在${sourceLabel === 'SL-H015' ? ' SL-H015 季查核' : '自主檢查'}中發現高風險異常：\n\n${lines.join('\n\n')}\n\n請於改善期限內處置。此信由加油站巡檢系統自動寄出。`
+    body: `${station.region}${station.group} ${station.name}（${{ '自主檢查': '填報人', 'SL-H015': '查核人' }[sourceLabel] || '檢查人'}：${reporter}）在${sourceLabel === 'SL-H015' ? ' SL-H015 季查核' : sourceLabel}中發現高風險異常：\n\n${lines.join('\n\n')}\n\n請於改善期限內處置。此信由加油站巡檢系統自動寄出。`
   });
   return true;
 }
@@ -559,11 +612,7 @@ function exportAudit(token, recordId, mode) {
     '查核得分：' + (score === '' ? '—' : score) + ' 分（符合 ' + pass + ' ÷ 基準 ' + base + ' × 100）', '不符合項目：' + ng.length + ' 項'
   ];
 
-  const tmp = SpreadsheetApp.create('匯出暫存_' + filename);
-  const file = DriveApp.getFileById(tmp.getId());
-  try {
-    const folderId = getProp_('EXPORT_FOLDER_ID');
-    if (folderId) { try { file.moveTo(DriveApp.getFolderById(folderId)); } catch (e) { console.warn('EXPORT_FOLDER_ID 無法使用：' + e); } }
+  return exportXlsx_(filename, tmp => {
     const first = tmp.getSheets()[0];
     if (mode === 'all') {
       writeFullSheet_(first, titleBase, info, all, pass, total, na, base, score);
@@ -571,6 +620,17 @@ function exportAudit(token, recordId, mode) {
     } else {
       writeNgSheet_(first, '不符合項目改善事項', info, ng);
     }
+  });
+}
+
+/** 建立暫存試算表 → build 寫入內容 → 以擁有者權限匯出 xlsx → 刪除暫存檔，回傳 base64 給前端下載。 */
+function exportXlsx_(filename, build) {
+  const tmp = SpreadsheetApp.create('匯出暫存_' + filename);
+  const file = DriveApp.getFileById(tmp.getId());
+  try {
+    const folderId = getProp_('EXPORT_FOLDER_ID');
+    if (folderId) { try { file.moveTo(DriveApp.getFolderById(folderId)); } catch (e) { console.warn('EXPORT_FOLDER_ID 無法使用：' + e); } }
+    build(tmp);
     SpreadsheetApp.flush();
     const res = UrlFetchApp.fetch('https://docs.google.com/spreadsheets/d/' + tmp.getId() + '/export?format=xlsx', {
       headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true
@@ -619,13 +679,14 @@ function writeFullSheet_(sh, title, info, all, pass, total, na, base, score) {
 }
 
 /** 不符合項目改善事項：每項一列，含照片（嵌入儲存格上方）、改善建議與改善期限。 */
-function writeNgSheet_(sh, title, info, ng) {
-  sh.setName('不符合改善事項');
+function writeNgSheet_(sh, title, info, ng, words) {
+  words = Object.assign({ sheet: '不符合改善事項', ng: '不符合', empty: '本次查核沒有不符合項目' }, words || {});
+  sh.setName(words.sheet);
   const head = 5, PH = 150;
-  const header = ['項次', '檢查項目', '不符合說明', '照片', '改善建議', '風險', '改善期限', '照片連結'];
+  const header = ['項次', '檢查項目', words.ng + '說明', '照片', '改善建議', '風險', '改善期限', '照片連結'];
   const body = ng.map(x => {
     const iss = x.iss || {};
-    return [String(x.it.code).replace('H015-', ''), x.it.text + (x.it.law ? '\n（' + x.it.law + '）' : ''),
+    return [shortCode_(x.it.code), (x.it.cat && words.cat ? x.it.cat + '：' : '') + x.it.text + (x.it.law ? '\n（' + x.it.law + '）' : ''),
       String(x.d['說明'] || '') || String(iss['異常說明'] || ''), '',
       String(x.d['改善建議'] || '') || String(iss['改善建議'] || '') || suggestFor_(x.it),
       String(iss['風險等級'] || x.it.risk || ''), dateStr_(iss['改善期限']), String(x.d['照片連結'] || '')];
@@ -636,7 +697,7 @@ function writeNgSheet_(sh, title, info, ng) {
     [info[2], '', '', '', info[3], '', '', ''],
     [info[4], '', '', '', info[5], '', '', ''],
     header
-  ].concat(body.length ? body : [['', '本次查核沒有不符合項目', '', '', '', '', '', '']]);
+  ].concat(body.length ? body : [['', words.empty, '', '', '', '', '', '']]);
   const n = rows.length;
   sh.getRange(1, 1, n, 8).setValues(rows).setFontFamily('Arial').setFontSize(10).setVerticalAlignment('middle');
   sh.getRange(1, 1, 1, 8).merge().setFontSize(14).setFontWeight('bold').setHorizontalAlignment('center');
@@ -677,6 +738,12 @@ function photoBlob_(url) {
     if (r.getResponseCode() === 200 && String(r.getHeaders()['Content-Type'] || r.getHeaders()['content-type'] || '').indexOf('image') === 0) return r.getBlob();
   } catch (e) { console.warn('縮圖取得失敗：' + e); }
   return DriveApp.getFileById(m[1]).getBlob();
+}
+
+/** 畫面與 Excel 用的短項次：H015-D06 → D06；EQ-03-12 → 3-12。 */
+function shortCode_(code) {
+  const m = /^EQ-(\d+)-(\d+)$/.exec(String(code));
+  return m ? Number(m[1]) + '-' + Number(m[2]) : String(code).replace('H015-', '');
 }
 
 function suggestFor_(i) {
@@ -753,6 +820,244 @@ function quarterLabel_(ymd) {
   return ymd.slice(0, 4) + ' 年第 ' + Math.ceil(Number(ymd.slice(5, 7)) / 3) + ' 季';
 }
 
+/* ============================== 營運設備現場重點項目檢查（站長、安保專員） ============================== */
+
+/** 檢查表單：可檢查的站點（站長只有自己的站）、啟用中的項目與最近紀錄。 */
+function getEquipForm(token) {
+  const sess = session_(token, ['站長', '安保專員']);
+  ensureEquipItems_();
+  const stations = scopeStations_(sess);
+  const codes = {};
+  stations.forEach(s => { codes[s.code] = true; });
+  const sum = equipSummary_(codes);
+  const items = equipItems_();
+  if (!items.length) throw new Error('試算表「檢查項目」沒有啟用中的營運設備檢查項目');
+  return {
+    today: today_(),
+    title: EQUIP_TITLE, program: EQUIP_PROGRAM, version: items[0].version || EQUIP_VERSION,
+    stations: stations.map(s => Object.assign(publicStation_(s), { lastEquip: sum.last[s.code] || null })),
+    items: items.map(i => ({ code: i.code, no: shortCode_(i.code), cat: i.cat, text: i.text, std: i.std, risk: i.risk || '中', unit: EQUIP_UNIT[i.code] || '' })),
+    recent: sum.recent.slice(0, 10),
+    riskDays: riskDays_()
+  };
+}
+
+/**
+ * payload = { station, answers: [{ code, result: 'ok'|'ng'|'na', note, measure, photo }] }
+ * 不良項目建立異常追蹤（來源「營運設備檢查」），改善期限依項目風險等級；不計分。
+ */
+function submitEquip(token, payload) {
+  const sess = session_(token, ['站長', '安保專員']);
+  payload = payload || {};
+  const station = scopeStations_(sess).find(s => s.code === String(payload.station || ''));
+  if (!station) throw new Error(sess.role === '站長' ? '只能檢查自己的站點' : '請選擇負責區域內的站點');
+  const items = equipItems_();
+  if (!items.length) throw new Error('目前沒有啟用的營運設備檢查項目');
+  const ans = {};
+  (payload.answers || []).forEach(a => { if (a && a.code) ans[a.code] = a; });
+  const missing = items.filter(i => !ans[i.code] || !EQUIP_LABEL[ans[i.code].result]);
+  if (missing.length) throw new Error('還有 ' + missing.length + ' 項未填寫');
+
+  ensureColumns_('檢查紀錄', ['站長確認人']);
+  ensureColumns_('異常追蹤', ['改善建議']);
+  const now = new Date();
+  const today = today_();
+  const stamp = fmt_(now, 'yyyy-MM-dd HH:mm:ss');
+  let recordId = 'EI-' + fmt_(now, 'yyyyMMdd-HHmmss') + '-' + station.code;
+  const days = riskDays_();
+  const who = sess.name + '（' + sess.role + '）';
+
+  const photos = {};
+  items.forEach(i => {
+    const a = ans[i.code];
+    if (a.result === 'ng' && a.photo) photos[i.code] = photoValue_(a.photo, station.code, recordId + '_' + i.code);
+  });
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  const issueRows = [];
+  const count = { ok: 0, ng: 0, na: 0 };
+  try {
+    recordId = uniqueRecordId_(recordId);
+    let seq = nextIssueSeq_(now);
+    const details = items.map(i => {
+      const a = ans[i.code];
+      count[a.result]++;
+      const note = clean_(a.note, 500);
+      const desc = [measureText_(a.measure, EQUIP_UNIT[i.code]), note].filter(x => x).join('；');
+      if (a.result === 'ng') {
+        const risk = ['高', '中', '低'].indexOf(i.risk) >= 0 ? i.risk : '中';
+        issueRows.push({
+          '異常編號': 'ISS-' + fmt_(now, 'yyyyMM') + '-' + pad_(seq++, 3), '紀錄編號': recordId, '站點代碼': station.code,
+          '來源': '營運設備檢查', '項目代碼': i.code, '異常說明': i.cat.replace(/^[一二三四五六七八九十]+、/, '') + '：' + (desc ? i.text + '（' + desc + '）' : i.text),
+          '異常照片': photos[i.code] || '', '風險等級': risk, '狀態': '待處理', '建立日期': today,
+          '改善期限': addDays_(today, days[risk] || 7), '處置說明': '', '改善後照片': '', '結案人': '', '結案日期': '',
+          '處置紀錄': JSON.stringify([{ t: stamp, who: who, text: '營運設備檢查不良' + (photos[i.code] ? '，附照片 1 張' : '') }]),
+          '改善建議': ''
+        });
+      }
+      return { '紀錄編號': recordId, '項目代碼': i.code, '結果': EQUIP_LABEL[a.result], '得分': '', '說明': desc, '照片連結': photos[i.code] || '' };
+    });
+    appendObjects_('檢查紀錄', [{
+      '紀錄編號': recordId, '表單類型': EQUIP_FORM, '版本': items[0].version || EQUIP_VERSION, '站點代碼': station.code, '頻率': '不定期',
+      '檢查日期': today, '填報人': sess.name, '送出時間': stamp, '異常數': issueRows.length, '得分': '', '站長確認時間': '', '站長確認人': ''
+    }]);
+    appendObjects_('檢查明細', details);
+    appendObjects_('異常追蹤', issueRows);
+    SpreadsheetApp.flush();
+  } finally {
+    lock.releaseLock();
+  }
+  let mailed = false;
+  try { mailed = notifyHighRisk_(station, issueRows, sess.name, '營運設備檢查'); } catch (e) { console.warn('通知寄送失敗：' + e); }
+  return {
+    recordId: recordId, station: publicStation_(station), date: today, total: items.length,
+    okCount: count.ok, ngCount: count.ng, naCount: count.na,
+    high: issueRows.filter(r => r['風險等級'] === '高').length, mailed: mailed
+  };
+}
+
+/** 可查看範圍內最近的營運設備檢查紀錄。 */
+function listEquips(token) {
+  const sess = session_(token);
+  const codes = {};
+  scopeStations_(sess).forEach(s => { codes[s.code] = true; });
+  return equipSummary_(codes).recent;
+}
+
+/**
+ * 匯出一次營運設備檢查為 .xlsx。
+ * mode = 'all'：第一個工作表比照紙本紀錄表（設備名稱、檢查項目、良好 V／不良 X／無此設備、缺失說明），第二個工作表為不良項目與照片。
+ * mode = 'ng'：只匯出不良項目（含照片、改善期限）。
+ */
+function exportEquip(token, recordId, mode) {
+  const sess = session_(token);
+  mode = mode === 'ng' ? 'ng' : 'all';
+  const rec = readTable_('檢查紀錄').rows.find(r => String(r['紀錄編號']) === String(recordId) && String(r['表單類型']) === EQUIP_FORM);
+  if (!rec) throw new Error('找不到檢查紀錄 ' + recordId);
+  if (!scopeStations_(sess).some(s => s.code === String(rec['站點代碼']))) throw new Error('沒有權限查看這筆檢查');
+  const station = stations_().find(s => s.code === String(rec['站點代碼'])) || { name: rec['站點代碼'], region: '', group: '' };
+  const byCode = {};
+  items_().forEach(i => { byCode[i.code] = i; });
+  const issues = {};
+  readTable_('異常追蹤').rows.filter(r => String(r['紀錄編號']) === recordId).forEach(r => { issues[String(r['項目代碼'])] = r; });
+  const all = readTable_('檢查明細').rows.filter(r => String(r['紀錄編號']) === recordId).map(d => {
+    const it = byCode[String(d['項目代碼'])] || { code: String(d['項目代碼']), cat: '', text: '', law: '', risk: '' };
+    return { it: it, d: d, iss: issues[it.code] || null };
+  });
+  const ng = all.filter(x => x.d['結果'] === '不良');
+  const cnt = r => all.filter(x => x.d['結果'] === r).length;
+  const date = dateStr_(rec['檢查日期']);
+  const filename = (mode === 'ng' ? '營運設備不良改善事項_' : '營運設備檢查表_') + station.name + '_' + date.split('-').join('') + '.xlsx';
+  const info = [
+    '站別：' + station.name + '（' + station.region + station.group + '）', '檢查日期：' + date,
+    '檢查人：' + rec['填報人'], '紀錄編號：' + recordId,
+    '檢查結果：良好 ' + cnt('良好') + ' 項、不良 ' + ng.length + ' 項、無此設備 ' + cnt('無此設備') + ' 項', '不良項目：' + ng.length + ' 項'
+  ];
+  const words = { sheet: '不良改善事項', ng: '不良', empty: '本次檢查沒有不良項目', cat: true };
+  return exportXlsx_(filename, tmp => {
+    const first = tmp.getSheets()[0];
+    if (mode === 'all') {
+      writeEquipSheet_(first, info, all);
+      writeNgSheet_(tmp.insertSheet('不良改善事項'), '營運設備不良項目改善事項', info, ng, words);
+    } else {
+      writeNgSheet_(first, '營運設備不良項目改善事項', info, ng, words);
+    }
+  });
+}
+
+/** 比照紙本：115 年度「加油（氣）站查核與輔導」加油站營運設備現場重點項目檢查表紀錄表。 */
+function writeEquipSheet_(sh, info, all) {
+  sh.setName('營運設備檢查表');
+  const head = 5;
+  const body = all.map(x => {
+    const m = /-(\d+)$/.exec(x.it.code);
+    return [x.it.cat, (m ? Number(m[1]) + '. ' : '') + x.it.text, EQUIP_MARK[x.d['結果']] || String(x.d['結果'] || ''), String(x.d['說明'] || '')];
+  });
+  const rows = [
+    [EQUIP_PROGRAM, '', '', ''],
+    [EQUIP_TITLE, '', '', ''],
+    [info[0], '', info[1], ''],
+    [info[2], '', info[4], ''],
+    ['設備名稱', '檢查項目及結果', '良好 V\n不良 X\n無此設備', '缺失說明（備註）']
+  ].concat(body);
+  const n = rows.length;
+  sh.getRange(1, 1, n, 4).setValues(rows).setFontFamily('Arial').setFontSize(10).setVerticalAlignment('middle');
+  sh.getRange(1, 1, 1, 4).merge().setFontSize(13).setFontWeight('bold').setHorizontalAlignment('center');
+  sh.getRange(2, 1, 1, 4).merge().setFontSize(13).setFontWeight('bold').setHorizontalAlignment('center');
+  [3, 4].forEach(r => { sh.getRange(r, 1, 1, 2).merge(); sh.getRange(r, 3, 1, 2).merge(); });
+  sh.getRange(head, 1, 1, 4).setFontWeight('bold').setBackground('#e2efe6').setHorizontalAlignment('center').setWrap(true);
+  sh.getRange(head, 1, n - head + 1, 4).setBorder(true, true, true, true, true, true);
+  if (body.length) {
+    sh.getRange(head + 1, 2, body.length, 1).setWrap(true);
+    sh.getRange(head + 1, 4, body.length, 1).setWrap(true);
+    sh.getRange(head + 1, 3, body.length, 1).setHorizontalAlignment('center');
+    let start = 0;
+    for (let k = 1; k <= body.length; k++) {
+      if (k === body.length || body[k][0] !== body[start][0]) {
+        sh.getRange(head + 1 + start, 1, k - start, 1).merge().setWrap(true).setHorizontalAlignment('center').setFontWeight('bold');
+        start = k;
+      }
+    }
+    body.forEach((r, k) => { if (r[2] === 'X') sh.getRange(head + 1 + k, 3).setFontColor('#c0352d').setFontWeight('bold'); });
+  }
+  [96, 380, 80, 240].forEach((w, k) => sh.setColumnWidth(k + 1, w));
+  sh.setFrozenRows(head);
+}
+
+/** 同一站同一秒送出兩次時，紀錄編號加上 -2、-3…，避免明細混在一起。 */
+function uniqueRecordId_(id) {
+  const used = {};
+  readTable_('檢查紀錄').rows.forEach(r => { used[String(r['紀錄編號'])] = true; });
+  let out = id, k = 1;
+  while (used[out]) out = id + '-' + (++k);
+  return out;
+}
+
+function equipItems_() { return items_().filter(i => i.on && i.form === EQUIP_FORM); }
+
+/** 量測值文字：已含單位就不再補單位。 */
+function measureText_(v, unit) {
+  const m = clean_(v, 30);
+  if (!m) return '';
+  return '量測值 ' + m + (unit && m.indexOf(unit) < 0 ? ' ' + unit : '');
+}
+
+/** 試算表「檢查項目」還沒有營運設備檢查項目時，寫入預設 82 項（只做一次；之後以試算表為準）。 */
+function ensureEquipItems_() {
+  if (items_().some(i => i.form === EQUIP_FORM)) return 0;
+  return withLock_(() => {
+    const all = items_();
+    if (all.some(i => i.form === EQUIP_FORM)) return 0;
+    let order = all.reduce((m, i) => Math.max(m, i.order), 0);
+    const rows = [];
+    EQUIP_CATS.forEach((c, ci) => c[1].forEach((x, k) => rows.push({
+      '項目代碼': equipCode_(ci + 1, k + 1), '表單類型': EQUIP_FORM, '版本': EQUIP_VERSION, '頻率': '不定期', '類別': c[0],
+      '檢查內容': x[0], '判定標準': '', '法規依據': '', '風險等級': x[1], '配分': '', '排序': ++order, '啟用': '是'
+    })));
+    appendObjects_('檢查項目', rows);
+    SpreadsheetApp.flush();
+    return rows.length;
+  });
+}
+
+/** 依站點整理營運設備檢查紀錄：最近一次與最近清單。 */
+function equipSummary_(codes) {
+  const names = {};
+  stations_().forEach(s => { names[s.code] = s.name; });
+  const recs = readTable_('檢查紀錄').rows
+    .filter(r => String(r['表單類型']) === EQUIP_FORM && codes[String(r['站點代碼'])])
+    .map(r => ({
+      recordId: String(r['紀錄編號']), station: String(r['站點代碼']), stationName: names[String(r['站點代碼'])] || '',
+      date: dateStr_(r['檢查日期']), submitted: String(fmtAny_(r['送出時間'])), inspector: String(r['填報人'] || ''),
+      ng: Number(r['異常數']) || 0
+    }))
+    .sort((a, b) => (b.submitted > a.submitted ? 1 : -1));
+  const last = {};
+  recs.forEach(r => { if (!last[r.station]) last[r.station] = { date: r.date, ng: r.ng, recordId: r.recordId }; });
+  return { recent: recs, last: last };
+}
+
 /* ============================== 異常（第一階段：唯讀） ============================== */
 
 function listIssues(token) {
@@ -787,6 +1092,7 @@ function issuesInScope_(codes) {
 
 function adminData(token) {
   session_(token, ['系統管理員']);
+  ensureEquipItems_();
   return { stations: stations_(), officers: officers_(), items: items_() };
 }
 
@@ -934,6 +1240,8 @@ function checkData_() {
   });
   const h015 = items.filter(i => i.on && i.form === 'SL-H015查核表').reduce((s, i) => s + (i.pts || 0), 0);
   if (h015 && h015 !== 100) add('提醒', '檢查項目', 'SL-H015 啟用項目配分合計為 ' + h015 + '，不是 100');
+  if (!items.some(i => i.form === EQUIP_FORM)) add('提醒', '檢查項目', '尚未建立營運設備檢查項目，第一次開啟「設備檢查」或執行「補上缺少的欄位」時會自動加入 82 項');
+  else if (!items.some(i => i.on && i.form === EQUIP_FORM)) add('錯誤', '檢查項目', '營運設備檢查項目全部停用，「設備檢查」無法填寫');
 
   const s = settings_();
   const pws = ['登入密碼_站長', '登入密碼_安保專員', '登入密碼_系統管理員'].map(k => String(s[k] === undefined ? '' : s[k]).trim());
@@ -959,6 +1267,8 @@ function setupSheets_() {
       added.push(name + '：' + miss.join('、'));
     }
   });
+  const n = ensureEquipItems_();
+  if (n) added.push('檢查項目：加入營運設備檢查 ' + n + ' 項');
   return added;
 }
 
