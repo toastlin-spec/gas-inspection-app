@@ -1,6 +1,6 @@
 /* 加油站巡檢 App — 畫面程式
  * 這個檔案由 Code.gs 以原始內容讀取後編碼傳給畫面執行，請勿加上 <script> 標籤。 */
-window.__appVersion='1.3.0';
+window.__appVersion='1.3.1';
 (function(){var st=document.createElement('style');st.textContent='.choice{display:flex;flex-direction:column;gap:4px;text-align:left;width:100%;border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:14px 16px;cursor:pointer}.choice:hover{border-color:var(--accent)}.choice:disabled{opacity:.6;cursor:wait}';document.head.appendChild(st)})();
 const ICON={
  home:'<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
@@ -30,11 +30,11 @@ const S={token:null,sess:null,home:null,
  uploading:{},issues:null,issueFilter:'未結案',admin:null,manageTab:'站點',stRegion:'全部',itemForm:'自主檢查',problems:null,sheet:null,busy:0};
 
 const TABS={
- home:{label:'首頁',icon:'home',roles:['站長','安保專員','系統管理員']},
+ home:{label:'首頁',icon:'home',roles:['站長','安保專員','油品主管','系統管理員']},
  check:{label:'自主檢查',icon:'check',roles:['站長']},
  audit:{label:'查核',icon:'audit',roles:['安保專員']},
  equip:{label:'設備檢查',icon:'equip',roles:['站長','安保專員']},
- issues:{label:'異常',icon:'issues',roles:['站長','安保專員','系統管理員']},
+ issues:{label:'異常',icon:'issues',roles:['站長','安保專員','油品主管','系統管理員']},
  manage:{label:'管理',icon:'manage',roles:['系統管理員']}
 };
 
@@ -133,9 +133,9 @@ function vLogin(){
    <p class="small muted" style="margin:0">姓名預設為站長，代理人填寫時請改成自己的姓名。</p>
    ${L.err?`<p class="msg">${esc(L.err)}</p>`:''}
    <button class="btn primary block" data-busy>進入</button><button type="button" class="btn ghost block" data-act="loginBack">返回</button></form>`;
- }else if(L.role==='安保專員'){
-  body=`<div class="panel stack"><b>安保專員登入</b><span class="small muted">請選擇你的姓名，只會看到負責區域的站點。</span>
-   <div class="who">${L.officers.map(o=>`<button aria-pressed="${L.officer===o.name}" data-act="pickOfficer" data-n="${esc(o.name)}"><span><b>${esc(o.name)}</b><br><span class="small muted">${esc(o.regions.join('、'))}・${o.count} 站</span></span>${L.officer===o.name?ic('ok','s'):''}</button>`).join('')||'<p class="small muted">尚未設定安保專員，請聯絡系統管理員。</p>'}</div>
+ }else if(L.role==='安保專員'||L.role==='油品主管'){
+  body=`<div class="panel stack"><b>${L.role}登入</b><span class="small muted">請選擇你的姓名，只會看到負責區域的站點${L.role==='油品主管'?'與缺失（唯讀）':''}。</span>
+   <div class="who">${L.officers.map(o=>`<button aria-pressed="${L.officer===o.name}" data-act="pickOfficer" data-n="${esc(o.name)}"><span><b>${esc(o.name)}</b><br><span class="small muted">${esc(o.regions.join('、'))}・${o.count} 站</span></span>${L.officer===o.name?ic('ok','s'):''}</button>`).join('')||`<p class="small muted">尚未設定${L.role}，請聯絡系統管理員。</p>`}</div>
    ${L.err?`<p class="msg">${esc(L.err)}</p>`:''}
    <button class="btn primary block" data-act="enterOfficer" data-busy>進入</button><button class="btn ghost block" data-act="loginBack">返回</button></div>`;
  }
@@ -148,7 +148,7 @@ function vHome(){
  if(a.role!=='站長'){
   const list=H.stations,done=list.filter(s=>s.daily).length,none=list.length-done;
   const byGroup=groupBy(list,s=>s.region+'・'+s.group);
-  return `<h1>${a.role==='安保專員'?esc(a.regions.join('、')):'全區'}總覽</h1>
+  return `<h1>${a.role!=='系統管理員'?esc(a.regions.join('、')):'全區'}總覽</h1>
   <div class="grid2">
    <a class="panel stat" href="#issues" style="text-decoration:none;color:inherit"><b class="mono">${H.counts.verify}</b><span>件待驗證</span></a>
    <div class="panel stat ${H.counts.overdue?'alert':''}"><b class="mono">${H.counts.overdue}</b><span>件逾期未改善</span></div>
@@ -354,7 +354,7 @@ function vIssueSheet(i){
 /* ---------- 管理設定 ---------- */
 function vManage(){
  const A=S.admin;if(!A)return '';
- const T=['站點','安保專員','檢查項目','資料檢查'];
+ const T=['站點','安保專員','油品主管','檢查項目','資料檢查'];
  let html=`<h1>管理設定</h1><div class="tabs" role="tablist">${T.map(t=>`<button role="tab" aria-selected="${S.manageTab===t}" data-act="mtab" data-t="${t}">${t}</button>`).join('')}</div>`;
  if(S.manageTab==='站點'){
   const list=A.stations.filter(s=>S.stRegion==='全部'||s.region===S.stRegion);
@@ -366,6 +366,12 @@ function vManage(){
   html+=`<p class="small muted" style="margin:0">安保專員決定各區的待驗證異常與通知寄給誰。站長、會計不建個人資料；登入密碼在試算表「設定」工作表修改。</p>
   <button class="btn primary block" data-act="editOfficer" data-name="">新增安保專員</button>
   <section class="panel">${A.officers.map(o=>`<div class="list-row ${o.on?'':'off'}"><button class="rowbtn" data-act="editOfficer" data-name="${esc(o.name)}"><b>${esc(o.name)}</b><span class="sub">${esc(o.regions.join('、'))}・${o.email?esc(o.email):'未填 Email'}</span></button><button class="switch" role="switch" aria-checked="${o.on}" aria-label="啟用 ${esc(o.name)}" data-act="tog" data-kind="officers" data-key="${esc(o.name)}" data-busy></button></div>`).join('')||'<p class="muted">尚未建立安保專員</p>'}</section>`;
+ }
+ if(S.manageTab==='油品主管'){
+  const M=A.managers||[];
+  html+=`<p class="small muted" style="margin:0">各區油品主管經理可登入查看負責區域的總覽、缺失（異常）與匯出 Excel，不能填寫或修改。登入密碼在試算表「設定」工作表的「登入密碼_油品主管」。</p>
+  <button class="btn primary block" data-act="editOfficer" data-name="" data-role="油品主管">新增油品主管</button>
+  <section class="panel">${M.map(o=>`<div class="list-row ${o.on?'':'off'}"><button class="rowbtn" data-act="editOfficer" data-name="${esc(o.name)}" data-role="油品主管"><b>${esc(o.name)}</b><span class="sub">${esc(o.regions.join('、'))}・${o.email?esc(o.email):'未填 Email'}</span></button><button class="switch" role="switch" aria-checked="${o.on}" aria-label="啟用 ${esc(o.name)}" data-act="tog" data-kind="managers" data-key="${esc(o.name)}" data-busy></button></div>`).join('')||'<p class="muted">尚未建立油品主管</p>'}</section>`;
  }
  if(S.manageTab==='檢查項目'){
   const forms=[['自主檢查','自主檢查'],['SL-H015查核表','SL-H015 查核表'],['營運設備檢查表','營運設備檢查']];
@@ -394,9 +400,9 @@ function vEditSheet(sh){
    <div class="grid2"><div class="field"><label for="fsName">站名</label><input type="text" id="fsName" value="${esc(s.name||'')}" maxlength="20" required></div><div class="field"><label for="fsMgr">站長</label><input type="text" id="fsMgr" value="${esc(s.mgr||'')}" maxlength="30" required></div></div>
    <div class="field"><label for="fsEmail">站長 Email（高風險異常通知用，可之後再填）</label><input type="email" id="fsEmail" value="${esc(s.email||'')}" maxlength="100"></div>
    <button class="btn primary block" data-busy>儲存</button></form>`}
- if(sh.type==='officer'){const o=A.officers.find(x=>x.name===sh.key)||{regions:[]};
-  return `<div class="sheet-head"><h1>${o.name?'編輯安保專員':'新增安保專員'}</h1><button class="iconbtn" data-act="closeSheet" aria-label="關閉">${ic('x','s')}</button></div>
-  <form class="stack" data-form="officer"><input type="hidden" id="foOrig" value="${esc(o.name||'')}">
+ if(sh.type==='officer'){const role=sh.role==='油品主管'?'油品主管':'安保專員',o=(role==='油品主管'?(A.managers||[]):A.officers).find(x=>x.name===sh.key)||{regions:[]};
+  return `<div class="sheet-head"><h1>${o.name?'編輯':'新增'}${role}</h1><button class="iconbtn" data-act="closeSheet" aria-label="關閉">${ic('x','s')}</button></div>
+  <form class="stack" data-form="officer"><input type="hidden" id="foOrig" value="${esc(o.name||'')}"><input type="hidden" id="foRole" value="${role}">
    <div class="field"><label for="foName">姓名</label><input type="text" id="foName" value="${esc(o.name||'')}" maxlength="30" required></div>
    <div class="field"><span class="small muted">負責區域</span><div class="row" style="flex-wrap:wrap">${REGIONS.map(r=>`<label class="chk"><input type="checkbox" name="foReg" value="${r}" ${o.regions.includes(r)?'checked':''}> ${r}</label>`).join('')}</div></div>
    <div class="field"><label for="foEmail">Email（可之後再填）</label><input type="email" id="foEmail" value="${esc(o.email||'')}" maxlength="100"></div>
@@ -421,7 +427,7 @@ function render(){
  document.getElementById('topbar').hidden=!a;document.getElementById('tabnav').hidden=!a;
  if(!a){document.getElementById('view').innerHTML=vLogin();document.getElementById('sheet').innerHTML='';const pw=document.getElementById('pw');pw&&pw.focus();return}
  const r=route();
- document.getElementById('ctx').textContent=a.role==='站長'?`${(S.home&&S.home.stations[0]||{}).name||''}・${a.name}`:a.role==='安保專員'?`${a.name}・安保專員（${a.regions.join('、')}）`:'系統管理員';
+ document.getElementById('ctx').textContent=a.role==='站長'?`${(S.home&&S.home.stations[0]||{}).name||''}・${a.name}`:(a.role==='安保專員'||a.role==='油品主管')?`${a.name}・${a.role}（${a.regions.join('、')}）`:'系統管理員';
  const badge=S.home?(a.role==='安保專員'?S.home.counts.verify:S.home.counts.open):0;
  document.getElementById('tabbar').innerHTML=Object.entries(TABS).filter(([k,t])=>t.roles.includes(a.role)).map(([k,t])=>`<a href="#${k}" ${k===r?'aria-current="page"':''}>${ic(t.icon)}${t.label}${k==='issues'&&badge?`<span class="badge">${badge}</span>`:''}</a>`).join('');
  const V={home:vHome,check:vCheck,audit:vAudit,equip:vEquip,issues:vIssues,manage:vManage};
@@ -519,7 +525,7 @@ document.addEventListener('click',async e=>{
  if(A==='streg'){S.stRegion=d.r;render();return}
  if(A==='iform'){S.itemForm=d.t;render();return}
  if(A==='editStation'){S.sheet={type:'station',key:d.code};render();return}
- if(A==='editOfficer'){S.sheet={type:'officer',key:d.name};render();return}
+ if(A==='editOfficer'){S.sheet={type:'officer',key:d.name,role:d.role||'安保專員'};render();return}
  if(A==='editItem'){S.sheet={type:'item',key:d.code};render();return}
  if(A==='tog'){await call('adminToggle',S.token,d.kind,d.key);S.admin=await call('adminData',S.token);render();return}
  if(A==='checkData'){S.problems=await call('adminCheckData',S.token);render();return}
@@ -550,14 +556,14 @@ document.addEventListener('submit',async e=>{
   if(!r.ok){S.login.err=r.message;render();return}
   S.login=Object.assign(S.login,{step:2,role:r.role,pw,err:'',stations:r.stations||[],officers:r.officers||[]});
   if(r.role==='站長'){const s=S.login.stations[0];S.login.station=s?s.code:'';S.login.name=mgrName(s&&s.mgr)}
-  if(r.role==='安保專員'&&S.login.officers.length===1)S.login.officer=S.login.officers[0].name;
+  if((r.role==='安保專員'||r.role==='油品主管')&&S.login.officers.length===1)S.login.officer=S.login.officers[0].name;
   if(r.role==='系統管理員'){await doLogin({pw});return}
   render();return}
  if(f==='mgr'){const name=v('lgName');if(!name){S.login.err='請輸入填報人姓名';render();return}await doLogin({pw:S.login.pw,station:v('lgSt'),name});return}
  if(f==='confirm'){const r=await call('confirmAudit',S.token,S.audit.result.recordId,v('cfName'));S.audit.result.confirmedBy=r.confirmedBy;toastT('站長已確認查核結果');render();return}
  if(f==='station'){await call('adminSaveStation',S.token,{code:v('fsCode'),region:v('fsRegion'),group:v('fsGroup'),name:v('fsName'),mgr:v('fsMgr'),email:v('fsEmail')});toastT('已儲存站點');S.sheet=null;S.admin=await call('adminData',S.token);render();return}
  if(f==='officer'){const regions=[...document.querySelectorAll('input[name=foReg]:checked')].map(x=>x.value).join('、');
-  await call('adminSaveOfficer',S.token,{originalName:v('foOrig'),name:v('foName'),regions,email:v('foEmail')});toastT('已儲存安保專員');S.sheet=null;S.admin=await call('adminData',S.token);render();return}
+  await call('adminSaveOfficer',S.token,{originalName:v('foOrig'),role:v('foRole'),name:v('foName'),regions,email:v('foEmail')});toastT('已儲存'+v('foRole'));S.sheet=null;S.admin=await call('adminData',S.token);render();return}
  if(f==='item'){const code=await call('adminSaveItem',S.token,{code:v('fiCode'),freq:v('fiFreq'),risk:v('fiRisk'),cat:v('fiCat'),text:v('fiText'),std:v('fiStd'),law:v('fiLaw')});toastT('已儲存 '+code);S.sheet=null;S.admin=await call('adminData',S.token);render();return}
  }catch(err){if(S.sess)render();else{S.login.err=stripErr(err&&err.message||err);render()}}
 });

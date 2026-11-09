@@ -172,6 +172,31 @@ throws(() => G.exportEquip(off.token, au.recordId, 'all'), /找不到/, 'SL-H015
 G.adminToggle(adm0.token, 'items', 'EQ-11-02');
 assert(G.getEquipForm(off.token).items.length === 81); ok('停用項目後表單剩 81 項');
 
+console.log('E4. 油品主管（各區經理，唯讀看缺失）');
+r = G.checkPassword('55555'); assert(r.ok && r.role === '油品主管' && r.officers.map(o => o.name + o.count).join() === '張三友24,劉信志27,林鍇傑20'); ok('油品主管密碼通過：' + r.officers.map(o => `${o.name}${o.regions.join('')}${o.count}站`).join('、') + '（角色寫「油品主管經理」也認得）');
+assert(G.checkPassword('98765').officers.length === 2); ok('安保專員名單不會混入油品主管');
+const mz = G.login({ pw: '55555', officer: '張三友' }), ml = G.login({ pw: '55555', officer: '劉信志' }), mn = G.login({ pw: '55555', officer: '林鍇傑' });
+throws(() => G.login({ pw: '55555', officer: '林佳賢' }), /姓名/, '不能用安保專員的姓名登入油品主管');
+h = G.getHome(mz.token); assert(h.stations.length === 24 && h.stations.every(s => s.region === '中區')); ok('張三友首頁：中區 24 站');
+const zIss = G.listIssues(mz.token);
+assert(zIss.length > 0 && zIss.every(i => i.station[0] === 'C') && G.listIssues(ml.token).every(i => i.station[0] === 'S') && G.listIssues(mn.token).length === 0); ok(`張三友看到中區缺失 ${zIss.length} 件；劉信志只看南區；林鍇傑北區沒有缺失`);
+assert(G.listAudits(mz.token).length === 2 && G.exportAudit(mz.token, au.recordId, 'ng').filename && G.exportEquip(mz.token, eq.recordId, 'all').filename); ok('可查看查核紀錄並匯出 SL-H015、設備檢查 Excel');
+throws(() => G.exportAudit(ml.token, au.recordId, 'ng'), /權限/, '劉信志不能匯出中區的查核');
+throws(() => G.submitCheck(mz.token, { freq: '每日', answers: [] }), /權限/, '不能送自主檢查');
+throws(() => G.submitAudit(mz.token, { station: 'C04', answers: [] }), /權限/, '不能送 SL-H015 查核');
+throws(() => G.getEquipForm(mz.token), /權限/, '不能填設備檢查');
+throws(() => G.uploadPhoto(mz.token, 'C04', 'X', PNG), /權限/, '不能上傳照片');
+throws(() => G.confirmAudit(mz.token, au2.recordId, 'x'), /權限/, '不能確認查核');
+throws(() => G.adminData(mz.token), /權限/, '不能進管理設定');
+A = G.adminData(adm0.token); assert(A.managers.length === 3 && A.officers.length === 2); ok('管理設定：油品主管 3 位、安保專員 2 位分開列');
+G.adminSaveOfficer(adm0.token, { role: '油品主管', name: '測試經理', regions: '北區、中區', email: 'mgr@example.com' });
+assert(G.adminData(adm0.token).managers.find(m => m.name === '測試經理').regions.join() === '北區,中區' && G.checkPassword('98765').officers.length === 2); ok('新增油品主管，不影響安保專員');
+G.adminSaveOfficer(adm0.token, { role: '油品主管', originalName: '林鍇傑', name: '林鍇傑', regions: '北區', email: 'lin.k@example.com' });
+assert(G.adminData(adm0.token).managers.find(m => m.name === '林鍇傑').role === '油品主管經理'); ok('編輯時保留原本的角色名稱');
+G.adminToggle(adm0.token, 'managers', '測試經理');
+assert(!G.checkPassword('55555').officers.some(o => o.name === '測試經理')); ok('停用後登入名單不再出現');
+assert(!G.adminCheckData(adm0.token).some(p => /油品主管/.test(p.msg))); ok('資料檢查：油品主管設定正常');
+
 console.log('F. 工作表名稱');
 sheets['設定 '] = sheets['設定']; sheets['設定 '].name = '設定 '; delete sheets['設定'];
 assert(G.checkPassword('12345').ok); ok('工作表名稱前後有空白仍可讀取');

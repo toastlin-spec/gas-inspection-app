@@ -1,6 +1,7 @@
 /**
  * 加油站巡檢 App — 後端（第一階段）
  *
+ * 角色：站長、安保專員、油品主管（各區油品主管經理，唯讀看缺失）、系統管理員。
  * 功能：密碼登入、首頁狀態、自主檢查送出（含照片）、SL-H015 查核與匯出 Excel、營運設備現場重點項目檢查與匯出 Excel、
  *       異常清單（唯讀）、管理設定、資料檢查。
  * 資料全部存在綁定的 Google 試算表；照片存在指令碼屬性 PHOTO_FOLDER_ID 指定的資料夾。
@@ -15,6 +16,9 @@
 const TZ = 'Asia/Taipei';
 const SESSION_SECONDS = 6 * 60 * 60; // CacheService 上限 6 小時
 const REGIONS = ['北區', '中區', '南區'];
+/** 各區油品主管經理：唯讀，可看負責區域的總覽、缺失（異常）與匯出 Excel，不能填寫或修改。 */
+const MANAGER_ROLE = '油品主管';
+const MANAGER_ROLE_NAMES = ['油品主管', '油品主管經理'];
 const RESULT_LABEL = { ok: '正常', ng: '異常', na: '不適用' };
 const MAX_PHOTO_CHARS = 4 * 1024 * 1024;
 const AUDIT_FORM = 'SL-H015查核表';
@@ -172,9 +176,9 @@ function checkPassword(pw) {
   }
   const out = { ok: true, role: role };
   if (role === '站長') out.stations = activeStations_().map(publicStation_);
-  if (role === '安保專員') {
+  if (role === '安保專員' || role === MANAGER_ROLE) {
     const all = activeStations_();
-    out.officers = officers_().filter(o => o.on).map(o => ({
+    out.officers = (role === MANAGER_ROLE ? managers_() : officers_()).filter(o => o.on).map(o => ({
       name: o.name, regions: o.regions,
       count: all.filter(s => o.regions.indexOf(s.region) >= 0).length
     }));
@@ -198,6 +202,10 @@ function login(req) {
     const o = officers_().find(x => x.on && x.name === String(req.officer || ''));
     if (!o) throw new Error('請選擇你的姓名');
     sess.name = o.name; sess.regions = o.regions;
+  } else if (role === MANAGER_ROLE) {
+    const m = managers_().find(x => x.on && x.name === String(req.officer || ''));
+    if (!m) throw new Error('請選擇你的姓名');
+    sess.name = m.name; sess.regions = m.regions;
   } else {
     sess.name = '系統管理員'; sess.regions = REGIONS.slice();
   }
@@ -215,7 +223,7 @@ function roleForPassword_(pw) {
   pw = String(pw === undefined || pw === null ? '' : pw).trim();
   if (!pw) return null;
   const s = settings_();
-  const map = { '登入密碼_站長': '站長', '登入密碼_安保專員': '安保專員', '登入密碼_系統管理員': '系統管理員' };
+  const map = { '登入密碼_站長': '站長', '登入密碼_安保專員': '安保專員', '登入密碼_系統管理員': '系統管理員', '登入密碼_油品主管': MANAGER_ROLE, '登入密碼_油品主管經理': MANAGER_ROLE };
   for (const key in map) {
     if (s[key] !== undefined && String(s[key]).trim() !== '' && String(s[key]).trim() === pw) return map[key];
   }
@@ -567,7 +575,7 @@ function confirmAudit(token, recordId, name) {
 
 /** 負責區域內最近的查核紀錄。 */
 function listAudits(token) {
-  const sess = session_(token, ['安保專員', '系統管理員']);
+  const sess = session_(token, ['安保專員', '系統管理員', MANAGER_ROLE]);
   const codes = {};
   scopeStations_(sess).forEach(s => { codes[s.code] = true; });
   return auditSummary_(codes).recent;
@@ -580,7 +588,7 @@ function listAudits(token) {
  * 做法：建立暫存試算表 → 以擁有者權限匯出 xlsx → 刪除暫存檔 → 回傳 base64 給前端下載。
  */
 function exportAudit(token, recordId, mode) {
-  const sess = session_(token, ['安保專員', '系統管理員']);
+  const sess = session_(token, ['安保專員', '系統管理員', MANAGER_ROLE]);
   mode = mode === 'all' ? 'all' : 'ng';
   const rec = auditRecord_(sess, recordId);
   const station = stations_().find(s => s.code === String(rec['站點代碼'])) || { name: rec['站點代碼'], region: '', group: '' };
@@ -1093,7 +1101,7 @@ function issuesInScope_(codes) {
 function adminData(token) {
   session_(token, ['系統管理員']);
   ensureEquipItems_();
-  return { stations: stations_(), officers: officers_(), items: items_() };
+  return { stations: stations_(), officers: officers_(), managers: managers_(), items: items_() };
 }
 
 function adminSaveStation(token, st) {
@@ -1131,9 +1139,10 @@ function adminSaveOfficer(token, o) {
   if (!name) throw new Error('請輸入姓名');
   if (!regions.length) throw new Error('請選擇負責區域');
   if (email && !isEmail_(email)) throw new Error('Email 格式不正確');
+  const role = o.role === MANAGER_ROLE ? MANAGER_ROLE : '安保專員';
   return withLock_(() => {
-    const cur = officers_().find(x => x.name === (o.originalName || name));
-    const row = { '姓名': name, '角色': '安保專員', '負責區域': regions.join('、'), 'Email': email };
+    const cur = (role === MANAGER_ROLE ? managers_() : officers_()).find(x => x.name === (o.originalName || name));
+    const row = { '姓名': name, '角色': cur ? cur.role : role, '負責區域': regions.join('、'), 'Email': email };
     if (cur) updateRow_('人員', cur._row, row);
     else appendObjects_('人員', [Object.assign(row, { '啟用': '是', '備註': '' })]);
     return name;
@@ -1177,6 +1186,7 @@ function adminToggle(token, kind, key) {
     const map = {
       stations: ['站點', stations_(), x => x.code],
       officers: ['人員', officers_(), x => x.name],
+      managers: ['人員', managers_(), x => x.name],
       items: ['檢查項目', items_(), x => x.code]
     }[kind];
     if (!map) throw new Error('未知的資料類型');
@@ -1247,6 +1257,11 @@ function checkData_() {
   const pws = ['登入密碼_站長', '登入密碼_安保專員', '登入密碼_系統管理員'].map(k => String(s[k] === undefined ? '' : s[k]).trim());
   if (pws.some(p => !p)) add('錯誤', '設定', '登入密碼有空白');
   if (new Set(pws).size !== pws.length) add('錯誤', '設定', '三組登入密碼不能相同');
+  const mpw = String(s['登入密碼_油品主管'] || s['登入密碼_油品主管經理'] || '').trim();
+  if (mpw) {
+    if (pws.indexOf(mpw) >= 0) add('錯誤', '設定', '油品主管的登入密碼不能和其他角色相同');
+    if (!managers_().some(m => m.on)) add('提醒', '人員', '已設定油品主管登入密碼，但還沒有啟用中的油品主管');
+  } else if (managers_().some(m => m.on)) add('提醒', '設定', '已建立油品主管，但「設定」工作表沒有「登入密碼_油品主管」，油品主管無法登入');
   if (pws.indexOf('12345') >= 0 || pws.indexOf('98765') >= 0 || pws.indexOf('77777') >= 0) add('提醒', '設定', '仍在使用初始密碼，正式上線前請修改');
   if (!getProp_('PHOTO_FOLDER_ID')) add('提醒', '指令碼屬性', '尚未設定 PHOTO_FOLDER_ID，第一次上傳照片時會在試算表所在資料夾自動建立「巡檢照片」');
   return out;
@@ -1285,12 +1300,16 @@ function stations_() {
 
 function activeStations_() { return stations_().filter(s => s.on); }
 
-function officers_() {
+function officers_() { return people_(['安保專員']); }
+function managers_() { return people_(MANAGER_ROLE_NAMES); }
+
+function people_(roles) {
   return readTable_('人員').rows
-    .filter(r => String(r['角色'] || '').trim() === '安保專員')
+    .filter(r => roles.indexOf(String(r['角色'] || '').trim()) >= 0)
     .map(r => ({
+      role: String(r['角色'] || '').trim(),
       name: String(r['姓名'] || '').trim(),
-      regions: String(r['負責區域'] || '').split(/[、,，\s]+/).filter(x => REGIONS.indexOf(x) >= 0),
+      regions: /全區|全部/.test(String(r['負責區域'] || '')) ? REGIONS.slice() : String(r['負責區域'] || '').split(/[、,，\s]+/).filter(x => REGIONS.indexOf(x) >= 0),
       email: String(r['Email'] || '').trim(), on: yes_(r['啟用']), _row: r._row
     })).filter(o => o.name);
 }
@@ -1308,7 +1327,7 @@ function items_() {
 function scopeStations_(sess) {
   const all = activeStations_();
   if (sess.role === '站長') return all.filter(s => s.code === sess.station);
-  if (sess.role === '安保專員') return all.filter(s => sess.regions.indexOf(s.region) >= 0);
+  if (sess.role === '安保專員' || sess.role === MANAGER_ROLE) return all.filter(s => sess.regions.indexOf(s.region) >= 0);
   return all;
 }
 
