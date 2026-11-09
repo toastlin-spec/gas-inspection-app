@@ -1,6 +1,6 @@
 /* 加油站巡檢 App — 畫面程式
  * 這個檔案由 Code.gs 以原始內容讀取後編碼傳給畫面執行，請勿加上 <script> 標籤。 */
-window.__appVersion='1.3.1';
+window.__appVersion='1.3.2';
 (function(){var st=document.createElement('style');st.textContent='.choice{display:flex;flex-direction:column;gap:4px;text-align:left;width:100%;border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:14px 16px;cursor:pointer}.choice:hover{border-color:var(--accent)}.choice:disabled{opacity:.6;cursor:wait}';document.head.appendChild(st)})();
 const ICON={
  home:'<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
@@ -232,7 +232,8 @@ function vAudit(){
  for(const [cat,arr] of groupBy(F.items,i=>i.cat)){
   const done=arr.filter(i=>a.ans[i.code]).length,ngc=arr.filter(i=>a.ans[i.code]==='ng').length,pts=arr.reduce((t,i)=>t+(Number(i.pts)||0),0);
   const open=a.openCats?a.openCats.includes(cat):first;first=false;
-  html+=`<details class="sec" ${open?'open':''} data-cat="${esc(cat)}"><summary><b>${esc(cat)}</b>${ngc?`<span class="risk 高">${ngc} 不符合</span>`:''}<span class="pts">${done}/${arr.length}・${pts}分</span>${ic('chev','s chev')}</summary><div class="body">`;
+  html+=`<details class="sec" ${open?'open':''} data-cat="${esc(cat)}"><summary><b>${esc(cat)}</b>${ngc?`<span class="risk 高">${ngc} 不符合</span>`:''}<span class="pts">${done}/${arr.length}・${pts}分</span>${ic('chev','s chev')}</summary><div class="body">
+   <div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn sm" data-act="abulk" data-cat="${esc(cat)}" data-v="ok">未填的標為符合</button><button class="btn sm ghost" data-act="abulk" data-cat="${esc(cat)}" data-v="na">整類不適用</button></div>`;
   for(const i of arr){
    const v=a.ans[i.code],needOther=i.other&&v&&v!=='na'&&!(a.other[i.code]||'').trim(),err=a.tried&&(!v||needOther);
    html+=`<div class="item ${v==='ng'?'bad':''} ${err?'err':''}" id="it-${esc(i.code)}"><div class="item-head"><span class="code">${esc(i.code.replace('H015-',''))}</span><p>${esc(i.text)}</p><span class="pts">${i.pts} 分</span></div>
@@ -487,6 +488,10 @@ document.addEventListener('click',async e=>{
  if(A==='aans'){const a=S.audit;a.ans[d.code]=a.ans[d.code]===d.v?undefined:d.v;if(a.ans[d.code]!=='ng'){delete a.photo[d.code];delete a.purl[d.code]}
   a.openCats=[...document.querySelectorAll('details.sec[open]')].map(x=>x.dataset.cat);saveAuditDraft();const y=window.scrollY;render();window.scrollTo({top:y});
   if(d.v==='ng'&&a.ans[d.code]==='ng'){const t=document.getElementById('an-'+d.code);t&&t.focus({preventScroll:true})}return}
+ if(A==='abulk'){const a=S.audit;S.auditForm.items.filter(i=>i.cat===d.cat).forEach(i=>{
+   if(d.v==='ok'&&!a.ans[i.code]&&!i.other)a.ans[i.code]='ok';
+   if(d.v==='na'&&a.ans[i.code]!=='ng')a.ans[i.code]='na'});
+  a.openCats=openCatsNow();saveAuditDraft();const y=window.scrollY;render();window.scrollTo({top:y});return}
  if(A==='submitAudit'){
   if(Object.keys(S.uploading).length){toastT('照片還在上傳，請稍候再送出');return}
   const F=S.auditForm,a=S.audit;

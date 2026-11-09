@@ -89,11 +89,19 @@ with sync_playwright() as p:
     pg.select_option('#auditSt', 'C04'); pg.wait_for_selector('details.sec')
     ok('查核分頁：' + pg.inner_text('main h1') + '，站點選單 %d 站' % pg.locator('#auditSt option').count())
     pg.click('text=完成查核'); pg.wait_for_selector('.toast:not([hidden])'); ok('未填完提示：' + pg.inner_text('#toast'))
+    pg.evaluate('''() => { const d = document.querySelector('details.sec[data-cat="一、專業證照"]'); d.open = true; d.querySelector('button[data-act="abulk"][data-v="na"]').click(); }''')
+    assert pg.inner_text('details.sec[data-cat="一、專業證照"] .pts').startswith('4/4')
+    pg.evaluate('''() => { const d = document.querySelector('details.sec[data-cat="一、專業證照"]'); d.querySelector('button[data-act="abulk"][data-v="ok"]').click(); }''')
+    assert pg.locator('details.sec[data-cat="一、專業證照"] button.na[aria-pressed="true"]').count() == 4
+    ok('查核「整類不適用」把一、專業證照 4 項設為不適用；「未填的標為符合」不覆蓋已填項目')
+    pg.evaluate('''() => { const d = document.querySelector('details.sec[data-cat="二、安全衛生管理"]'); d.open = true; d.querySelector('button[data-act="abulk"][data-v="ok"]').click(); }''')
+    assert pg.locator('#it-H015-B01 button.ok[aria-pressed="true"]').count() == 1 and pg.locator('#it-H015-B07 button.na[aria-pressed="true"]').count() == 1
+    ok('「未填的標為符合」不會動到「其他」欄位（維持不適用）')
     pg.evaluate('''() => { document.querySelectorAll('details.sec').forEach(d => d.open = true); }''')
     codes = pg.evaluate('''() => [...document.querySelectorAll('button.ok[data-act="aans"]')].map(b => b.dataset.code)''')
     for c in codes:
         if c in ('H015-B07','H015-C14','H015-D10','H015-F07'): continue
-        pg.evaluate('''c => { document.querySelectorAll('details.sec').forEach(d => d.open = true); document.querySelector(`#it-${c} button.${c==='H015-C06'||c==='H015-C12'?'na':(c==='H015-D06'?'ng':'ok')}`).click(); }''', c)
+        pg.evaluate('''c => { document.querySelectorAll('details.sec').forEach(d => d.open = true); const b = document.querySelector(`#it-${c} button.${c==='H015-C06'||c==='H015-C12'?'na':(c==='H015-D06'?'ng':'ok')}`); if (b.getAttribute('aria-pressed') !== 'true') b.click(); }''', c)
     pg.fill('#an-H015-D06', '95 無鉛卸油口未上鎖')
     ok('改善建議自動帶入：' + pg.input_value('#as-H015-D06')[:24] + '…')
     pg.set_input_files('#ap-H015-D06', OUT + 'photo.png'); pg.wait_for_selector('#it-H015-D06 img.thumb')
