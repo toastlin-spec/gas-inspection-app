@@ -168,10 +168,10 @@ function menuCheckData() {
 
 /* ============================== 登入與工作階段 ============================== */
 
-/** 第一步：確認密碼，回傳角色與第二步需要的選項。 */
-function checkPassword(pw) {
+/** 第一步：確認密碼，回傳角色與第二步需要的選項。wantRole 為畫面上點選的身分，密碼必須屬於這個身分。 */
+function checkPassword(pw, wantRole) {
   const role = roleForPassword_(pw);
-  if (!role) {
+  if (!role || (wantRole && role !== wantRole)) {
     Utilities.sleep(1500); // 放慢連續猜密碼
     return { ok: false, message: '密碼不正確，請再試一次' };
   }
@@ -191,7 +191,7 @@ function checkPassword(pw) {
 function login(req) {
   req = req || {};
   const role = roleForPassword_(req.pw);
-  if (!role) { Utilities.sleep(1500); throw new Error('密碼不正確，請重新登入'); }
+  if (!role || (req.role && role !== req.role)) { Utilities.sleep(1500); throw new Error('密碼不正確，請重新登入'); }
   const sess = { role: role, name: '', station: '', regions: [] };
   if (role === '站長') {
     const st = activeStations_().find(s => s.code === String(req.station || ''));

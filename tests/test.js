@@ -175,6 +175,8 @@ assert(G.getEquipForm(off.token).items.length === 81); ok('停用項目後表單
 console.log('E4. 油品主管（各區經理，唯讀看缺失）');
 r = G.checkPassword('55555'); assert(r.ok && r.role === '油品主管' && r.officers.map(o => o.name + o.count).join() === '張三友24,劉信志27,林鍇傑20'); ok('油品主管密碼通過：' + r.officers.map(o => `${o.name}${o.regions.join('')}${o.count}站`).join('、') + '（角色寫「油品主管經理」也認得）');
 assert(G.checkPassword('98765').officers.length === 2); ok('安保專員名單不會混入油品主管');
+assert(G.checkPassword('55555', '油品主管').ok && !G.checkPassword('55555', '站長').ok && !G.checkPassword('12345', '油品主管').ok); ok('點選身分後，密碼必須屬於該身分');
+throws(() => G.login({ pw: '55555', role: '安保專員', officer: '林佳賢' }), /密碼不正確/, '登入時身分與密碼不符被拒絕');
 const mz = G.login({ pw: '55555', officer: '張三友' }), ml = G.login({ pw: '55555', officer: '劉信志' }), mn = G.login({ pw: '55555', officer: '林鍇傑' });
 throws(() => G.login({ pw: '55555', officer: '林佳賢' }), /姓名/, '不能用安保專員的姓名登入油品主管');
 h = G.getHome(mz.token); assert(h.stations.length === 24 && h.stations.every(s => s.region === '中區')); ok('張三友首頁：中區 24 站');
