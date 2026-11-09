@@ -228,6 +228,8 @@ assert(/^【每週缺失彙整】中區 \d{4}-\d{2}-\d{2}：未結案 \d+ 件/.t
 assert(/目前沒有未結案的缺失/.test(lm.body)); ok('北區沒有缺失時寫明「目前沒有未結案的缺失」');
 wk = G.sendManagerWeekly(); assert(wk.sent.length === 0 && /6 天內已寄過/.test(wk.skipped[0])); ok('6 天內重複呼叫不會再寄（避免被濫用）');
 assert(G.sendManagerWeekly_(true).sent.length === 2); ok('試算表選單「立即寄送」不受限制');
+assert(G.adminSendManagerWeekly(adm0.token).sent.length === 2); ok('系統管理員可在 App 管理設定立即寄送');
+throws(() => G.adminSendManagerWeekly(mz.token), /權限/, '油品主管不能觸發寄送');
 
 console.log('F. 工作表名稱');
 sheets['設定 '] = sheets['設定']; sheets['設定 '].name = '設定 '; delete sheets['設定'];

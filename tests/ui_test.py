@@ -169,6 +169,8 @@ with sync_playwright() as p:
     pg.screenshot(path=OUT + '7_manage.png')
     pg.click('button[data-t="油品主管"]'); pg.wait_for_selector('text=張三友')
     ok('管理設定油品主管：' + '、'.join(pg.locator('main section .rowbtn b').all_inner_texts()))
+    pg.click('text=立即寄送每週缺失彙整'); pg.wait_for_selector('text=已寄出')
+    ok('管理設定立即寄送每週彙整：' + pg.inner_text('main section.panel.stack >> nth=-1 >> div.small').replace(chr(10), '；'))
     pg.screenshot(path=OUT + '18_manage_managers.png')
     pg.click('button[data-t="檢查項目"]'); pg.click('button[data-t="營運設備檢查表"]'); pg.wait_for_selector('text=EQ-12-03')
     ok('管理設定：' + pg.inner_text('main p.small >> nth=0'))

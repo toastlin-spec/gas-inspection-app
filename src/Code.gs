@@ -1277,6 +1277,12 @@ function adminCheckData(token) {
   return checkData_();
 }
 
+/** 系統管理員在 App「管理 › 油品主管」立即寄送每週缺失彙整（測試或補寄）。 */
+function adminSendManagerWeekly(token) {
+  session_(token, ['系統管理員']);
+  return sendManagerWeekly_(true);
+}
+
 /* ============================== 資料檢查 ============================== */
 
 function checkData_() {
