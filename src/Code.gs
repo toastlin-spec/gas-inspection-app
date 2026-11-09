@@ -18,7 +18,8 @@ const SESSION_SECONDS = 6 * 60 * 60; // CacheService 上限 6 小時
 const REGIONS = ['北區', '中區', '南區'];
 /** 各區油品主管經理：唯讀，可看負責區域的總覽、缺失（異常）與匯出 Excel，不能填寫或修改。 */
 const MANAGER_ROLE = '油品主管';
-const MANAGER_ROLE_NAMES = ['油品主管', '油品主管經理'];
+/** 「人員」角色欄含「主管」或「經理」就視為油品主管（例如：油品主管、油品主管經理、區經理）。 */
+const isManagerRole_ = role => /主管|經理/.test(role) && ['安保專員', '站長', '系統管理員'].indexOf(role) < 0;
 const RESULT_LABEL = { ok: '正常', ng: '異常', na: '不適用' };
 const MAX_PHOTO_CHARS = 4 * 1024 * 1024;
 const AUDIT_FORM = 'SL-H015查核表';
@@ -223,7 +224,8 @@ function roleForPassword_(pw) {
   pw = String(pw === undefined || pw === null ? '' : pw).trim();
   if (!pw) return null;
   const s = settings_();
-  const map = { '登入密碼_站長': '站長', '登入密碼_安保專員': '安保專員', '登入密碼_系統管理員': '系統管理員', '登入密碼_油品主管': MANAGER_ROLE, '登入密碼_油品主管經理': MANAGER_ROLE };
+  const map = { '登入密碼_站長': '站長', '登入密碼_安保專員': '安保專員', '登入密碼_系統管理員': '系統管理員' };
+  managerPwKeys_(s).forEach(k => { map[k] = MANAGER_ROLE; });
   for (const key in map) {
     if (s[key] !== undefined && String(s[key]).trim() !== '' && String(s[key]).trim() === pw) return map[key];
   }
@@ -1257,11 +1259,20 @@ function checkData_() {
   const pws = ['登入密碼_站長', '登入密碼_安保專員', '登入密碼_系統管理員'].map(k => String(s[k] === undefined ? '' : s[k]).trim());
   if (pws.some(p => !p)) add('錯誤', '設定', '登入密碼有空白');
   if (new Set(pws).size !== pws.length) add('錯誤', '設定', '三組登入密碼不能相同');
-  const mpw = String(s['登入密碼_油品主管'] || s['登入密碼_油品主管經理'] || '').trim();
-  if (mpw) {
-    if (pws.indexOf(mpw) >= 0) add('錯誤', '設定', '油品主管的登入密碼不能和其他角色相同');
-    if (!managers_().some(m => m.on)) add('提醒', '人員', '已設定油品主管登入密碼，但還沒有啟用中的油品主管');
-  } else if (managers_().some(m => m.on)) add('提醒', '設定', '已建立油品主管，但「設定」工作表沒有「登入密碼_油品主管」，油品主管無法登入');
+  const mgrs = managers_();
+  const mpws = managerPwKeys_(s).map(k => String(s[k]).trim());
+  if (mpws.length) {
+    if (mpws.some(p => pws.indexOf(p) >= 0)) add('錯誤', '設定', '油品主管的登入密碼不能和站長、安保專員或系統管理員相同，否則會登入成其他角色');
+    if (!mgrs.some(m => m.on)) add('錯誤', '人員', '已設定油品主管登入密碼，但「人員」工作表沒有啟用中的油品主管（角色欄請填「油品主管」）');
+  } else if (mgrs.length) add('錯誤', '設定', '「人員」已有油品主管 ' + mgrs.map(m => m.name).join('、') + '，但「設定」工作表沒有「登入密碼_油品主管」這一列，油品主管無法登入');
+  mgrs.forEach(m => {
+    if (!m.regions.length) add('錯誤', '人員', '油品主管 ' + m.name + ' 的負責區域沒有填北區、中區或南區，登入後看不到任何站');
+    if (!m.on) add('提醒', '人員', '油品主管 ' + m.name + ' 的「啟用」為否，登入名單不會出現');
+  });
+  readTable_('人員').rows.forEach(r => {
+    const role = String(r['角色'] || '').trim(), name = String(r['姓名'] || '').trim();
+    if (name && role && role !== '安保專員' && !isManagerRole_(role)) add('提醒', '人員', name + ' 的角色「' + role + '」系統不認得，只認「安保專員」「油品主管」');
+  });
   if (pws.indexOf('12345') >= 0 || pws.indexOf('98765') >= 0 || pws.indexOf('77777') >= 0) add('提醒', '設定', '仍在使用初始密碼，正式上線前請修改');
   if (!getProp_('PHOTO_FOLDER_ID')) add('提醒', '指令碼屬性', '尚未設定 PHOTO_FOLDER_ID，第一次上傳照片時會在試算表所在資料夾自動建立「巡檢照片」');
   return out;
@@ -1300,18 +1311,32 @@ function stations_() {
 
 function activeStations_() { return stations_().filter(s => s.on); }
 
-function officers_() { return people_(['安保專員']); }
-function managers_() { return people_(MANAGER_ROLE_NAMES); }
+function officers_() { return people_(role => role === '安保專員'); }
+/** 油品主管：「啟用」空白視為啟用（只有填「否」才停用）。 */
+function managers_() { return people_(isManagerRole_, true); }
 
-function people_(roles) {
+function people_(match, blankOn) {
   return readTable_('人員').rows
-    .filter(r => roles.indexOf(String(r['角色'] || '').trim()) >= 0)
+    .filter(r => match(String(r['角色'] || '').trim()))
     .map(r => ({
       role: String(r['角色'] || '').trim(),
       name: String(r['姓名'] || '').trim(),
-      regions: /全區|全部/.test(String(r['負責區域'] || '')) ? REGIONS.slice() : String(r['負責區域'] || '').split(/[、,，\s]+/).filter(x => REGIONS.indexOf(x) >= 0),
-      email: String(r['Email'] || '').trim(), on: yes_(r['啟用']), _row: r._row
+      regions: regionsOf_(r['負責區域']),
+      email: String(r['Email'] || '').trim(),
+      on: blankOn && String(r['啟用'] === undefined || r['啟用'] === null ? '' : r['啟用']).trim() === '' ? true : yes_(r['啟用']), _row: r._row
     })).filter(o => o.name);
+}
+
+/** 負責區域：接受「中區、南區」「中區,南區」「北部」「中」「全區」等寫法。 */
+function regionsOf_(v) {
+  const t = String(v || '');
+  if (/全區|全部|全/.test(t)) return REGIONS.slice();
+  return REGIONS.filter(r => t.indexOf(r) >= 0 || t.indexOf(r.charAt(0)) >= 0);
+}
+
+/** 「設定」中油品主管的登入密碼參數：登入密碼_ 後面含「主管」或「經理」，例如 登入密碼_油品主管。 */
+function managerPwKeys_(s) {
+  return Object.keys(s).filter(k => k.indexOf('登入密碼_') === 0 && /主管|經理/.test(k) && String(s[k] === undefined || s[k] === null ? '' : s[k]).trim() !== '');
 }
 
 function items_() {

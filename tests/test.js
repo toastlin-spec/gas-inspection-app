@@ -195,7 +195,22 @@ G.adminSaveOfficer(adm0.token, { role: '油品主管', originalName: '林鍇傑'
 assert(G.adminData(adm0.token).managers.find(m => m.name === '林鍇傑').role === '油品主管經理'); ok('編輯時保留原本的角色名稱');
 G.adminToggle(adm0.token, 'managers', '測試經理');
 assert(!G.checkPassword('55555').officers.some(o => o.name === '測試經理')); ok('停用後登入名單不再出現');
-assert(!G.adminCheckData(adm0.token).some(p => /油品主管/.test(p.msg))); ok('資料檢查：油品主管設定正常');
+p = G.adminCheckData(adm0.token);
+assert(!p.some(x => x.level === '錯誤' && /油品主管/.test(x.msg)) && p.some(x => /測試經理 的「啟用」為否/.test(x.msg))); ok('資料檢查：油品主管設定正常，並提醒停用中的測試經理');
+// 寬鬆寫法：角色「區經理」、負責區域只寫「中」、啟用空白；密碼參數名稱「登入密碼_油品主管經理」
+const ppl = sheets['人員'], ph = ppl.data[0];
+const pr = ph.map(() => ''); pr[ph.indexOf('姓名')] = '王寬鬆'; pr[ph.indexOf('角色')] = '區經理'; pr[ph.indexOf('負責區域')] = '中'; ppl.data.push(pr);
+const pr2 = ph.map(() => ''); pr2[ph.indexOf('姓名')] = '李會計'; pr2[ph.indexOf('角色')] = '會計'; pr2[ph.indexOf('啟用')] = '是'; ppl.data.push(pr2);
+const loose = G.checkPassword('55555').officers.find(o => o.name === '王寬鬆');
+assert(loose && loose.regions.join() === '中區' && loose.count === 24); ok('角色寫「區經理」、區域只寫「中」、啟用空白也認得');
+const cfg = sheets['設定'], kp = cfg.data.findIndex(r => r[0] === '登入密碼_油品主管'); cfg.data[kp][0] = '登入密碼_油品主管經理';
+assert(G.checkPassword('55555').role === '油品主管'); ok('密碼參數寫成「登入密碼_油品主管經理」也可以');
+p = G.adminCheckData(adm0.token); assert(p.some(x => /李會計 的角色「會計」系統不認得/.test(x.msg))); ok('資料檢查提醒系統不認得的角色');
+cfg.data[kp][1] = ''; p = G.adminCheckData(adm0.token);
+assert(!G.checkPassword('55555').ok && p.some(x => x.level === '錯誤' && /沒有「登入密碼_油品主管」這一列/.test(x.msg))); ok('沒有油品主管密碼時，資料檢查列為錯誤並列出經理姓名');
+cfg.data[kp][1] = '98765'; p = G.adminCheckData(adm0.token);
+assert(G.checkPassword('98765').role === '安保專員' && p.some(x => /不能和站長、安保專員/.test(x.msg))); ok('密碼與安保專員相同時列為錯誤');
+cfg.data[kp] = ['登入密碼_油品主管', '55555', '', '']; ppl.data.splice(ppl.data.length - 2, 2);
 
 console.log('F. 工作表名稱');
 sheets['設定 '] = sheets['設定']; sheets['設定 '].name = '設定 '; delete sheets['設定'];
